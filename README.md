@@ -17,14 +17,16 @@ in [`cedit/mdcore/`](cedit/mdcore/).
 ```bash
 python3 -m venv venv
 venv/bin/pip install -r requirements.txt   # the parsing stack is pinned EXACTLY — see the file
+venv/bin/pip install -e .                  # puts `cedit` on the path so it runs from any directory
 venv/bin/python3 -m pytest                 # 24 tests, no network
 ```
 
 ## Quickstart
 
-Run from the root of the repository holding your vendored copies. State
-lives in `.cedit/` (commit it — the base snapshots *are* the merge's
-memory).
+Activate the venv (`source venv/bin/activate`), then run from the root of
+the repository holding your vendored copies — a *different* repo than this
+one, which is what the editable install above is for. State lives in
+`.cedit/` (commit it — the base snapshots *are* the merge's memory).
 
 ```bash
 # 1. start tracking (vendors the file if it doesn't exist yet)
@@ -73,10 +75,12 @@ explicit, never a silent clobber.
 
 | Path | |
 | --- | --- |
+| `cedit/__main__.py` | the `python3 -m cedit` entry point |
 | `cedit/cli.py` | the five subcommands: snapshot / diff / sync / status / resolve |
 | `cedit/merge3.py` | the 3-way merge matrix + overlay derivation |
 | `cedit/align.py` | block-sequence alignment (LCS over Merkle hashes, moves, fuzzy) |
 | `cedit/blocks.py` | block extraction, splicing, render-and-verify |
 | `cedit/state.py` | `.cedit/` — base snapshots, manifest (+ conflicts), overlay |
+| `cedit/store.py` | atomic writes: temp file + `rename(2)`, so a crash never leaves half-written state |
 | `cedit/mdcore/` | **vendored, frozen**: pinned parser + tree_diff from markdown-localization |
 | `tests/` | merge matrix + end-to-end CLI lifecycle |
