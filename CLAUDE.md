@@ -21,6 +21,7 @@ precise, per-block conflict when upstream touched the same block you did.
 ```bash
 python3 -m venv venv
 venv/bin/pip install -r requirements.txt   # the parsing stack is pinned EXACTLY — see below
+venv/bin/pip install -e .                  # only needed to run cedit from another repo, not for tests
 venv/bin/python3 -m pytest                 # 24 tests, no network, <1s
 venv/bin/python3 -m pytest tests/test_merge3.py -k reapply   # one test / one file
 venv/bin/python3 -m cedit --help           # the CLI
@@ -30,10 +31,12 @@ venv/bin/python3 -m cedit --help           # the CLI
 root on `sys.path` and the `cedit` package imports **without installation** —
 there is no `pip install -e .` step and none is needed.
 
-Use `venv/bin/python3`, not a bare `python3`: the interpreter needs the
-pinned parsing stack, and `python3 -m cedit` (the form README.md shows)
-assumes a consumer repo where those pins are already installed. From *this*
-repo a bare `python3 -m cedit` fails on `ModuleNotFoundError`.
+Use `venv/bin/python3`, not a bare `python3` — the interpreter needs the
+pinned parsing stack, so a bare `python3 -m cedit` fails on
+`ModuleNotFoundError`. README.md's quickstart writes plain `python3 -m cedit`
+because it assumes an activated venv (`source venv/bin/activate`) and the
+editable install; that is the same interpreter by another name. Tests do not
+need the editable install — the root `conftest.py` covers them.
 
 ## Architecture
 
