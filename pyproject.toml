@@ -1,4 +1,4 @@
 [project]
 name = "cedit"
-version = "0.0.0-dev.2"
+version = "0.1.0"
 description = "Continuous editing of vendored Markdown via 3-way structural merge"
