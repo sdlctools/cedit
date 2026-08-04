@@ -1,0 +1,18 @@
+# The parsing stack is PINNED EXACTLY — same rule and same pins as the
+# markdown-localization repo this project grew out of.
+#
+# Every hash in `.cedit/` state (base doc hashes, overlay keys, conflict
+# keys) is taken over `cedit/mdcore/utils.make_parser`, which is these
+# packages in one configuration. A minor upgrade can change what the parser
+# emits, which silently moves every hash and turns the next sync into a
+# wall of false conflicts. Upgrade deliberately, one pin at a time, and run
+# the test suite.
+markdown-it-py==4.2.0
+mdit-py-plugins==0.6.1
+mdformat==1.0.0
+mdformat-gfm==1.0.0
+mdformat-frontmatter==2.1.2
+linkify-it-py==2.1.0
+
+# tests
+pytest
