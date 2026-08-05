@@ -5,9 +5,8 @@
 | `.cedit/manifest.json`      | per-doc ledger + unresolved conflicts | yes       |
 | `.cedit/overlay.json`       | derived local-edit overlay            | yes (like a lockfile — reviewable, always recomputable from B + the working copy) |
 
-Base snapshots are stored as files rather than git blob refs (the l10n
-manifest's trick) because B comes from a *different* repository — there is
-no local blob to point at. Doc keys are normalized relative paths; JSON is
+Base snapshots are stored as files rather than git blob refs because B comes
+from a *different* repository — there is no local blob to point at. Doc keys are normalized relative paths; JSON is
 UTF-8, `ensure_ascii=False`, docs serialized sorted so diffs stay local.
 """
 

@@ -100,7 +100,7 @@ Working on cedit itself rather than using it? Install from a clone instead:
 python3 -m venv venv
 venv/bin/pip install -r requirements.txt   # the parsing stack, pinned EXACTLY
 venv/bin/pip install -e .                  # puts `cedit` on the venv's path
-venv/bin/python3 -m pytest                 # 29 tests, no network, <1s
+venv/bin/python3 -m pytest                 # 31 tests, no network, <1s
 ```
 
 **The pins are load-bearing.** `requirements.txt` pins `markdown-it-py`,
@@ -663,10 +663,10 @@ kinds, and both diff, overlay and merge identically:
 | `unit` | `heading`, `paragraph`, `th`, `td` | the inline source of the block |
 | `opaque` | `fence`, `code_block`, `html_block`, `front_matter`, `hr` | the token's own content (plus the fence info string) |
 
-The `unit` set is exactly the localization pipeline's translation units. The
-`opaque` set is cedit's addition: in a translation pipeline a code fence is never
-translated, so it is just copied — here it is the *motivating* edit, so it is a
-first-class block with its own identity.
+The `unit` set is exactly `tree_diff`'s translation units. The `opaque` set is
+cedit's addition: to a translator a code fence is never translated, so it is
+just copied — here it is the *motivating* edit, so it is a first-class block
+with its own identity.
 
 **Identity is a hash.** Each block carries the 16-hex-char Merkle hash the
 vendored `tree_diff.hash_tree` assigns over the canonicalized document.

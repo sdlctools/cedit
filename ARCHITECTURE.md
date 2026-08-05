@@ -19,6 +19,7 @@ Where the other documents stop:
 | [SPEC.md](SPEC.md) | normative design — merge matrix, sync algorithm, state format, reuse rules, phases |
 | [AGENTS.md](AGENTS.md) | orientation and the five invariants |
 | [.claude/rules/release-pipeline.md](.claude/rules/release-pipeline.md) | the three versioning workflows and how they break |
+| [.claude/rules/hash-stability.md](.claude/rules/hash-stability.md) | changing `mdcore/` or the pins without moving consumers' hashes |
 | **this file** | the implementation that realises them, and how to change it |
 
 Nothing here restates behaviour those five define. Where a design decision
@@ -335,8 +336,8 @@ with a paragraph, whatever the text similarity.
    or above `tree_diff.SIM_THRESHOLD` (0.4) whose ends are both still free
    become `Fate(EDITED, False, …)`.
 3. **The 1-for-1 positional fallback** (`align.py:84-90`) — cedit's one
-   deliberate divergence from the localization heuristics, and the comment at
-   that site explains why. When a `replace` window holds exactly one block on
+   deliberate divergence from `tree_diff`'s own pairing heuristics, and the
+   comment at that site explains why. When a `replace` window holds exactly one block on
    each side and they share `kind` and `node_type`, they are paired *whatever*
    the text score: `a` → `a-adapted` in a table cell scores 0.18, but
    positional evidence is conclusive. Without this, a short local edit would be
@@ -363,9 +364,9 @@ kinds:
 - **units** — the nodes owning an `inline` child (`heading`, `paragraph`,
   `th`, `td`), exactly `tree_diff.UNIT_PARENTS`;
 - **opaque blocks** — `tree_diff.OPAQUE`: `fence`, `code_block`, `html_block`,
-  `front_matter`, `hr`. The localization pipeline only ever copies these; here
-  they are first-class, because the motivating local edit *is* a rewritten
-  code fence.
+  `front_matter`, `hr`. `tree_diff`'s own planning surface only ever copies
+  these; here they are first-class, because the motivating local edit *is* a
+  rewritten code fence.
 
 Two more constants: `SINGLE_LINE_TYPES = {"th", "td"}` (`blocks.py:40`), cells
 where a spliced newline would end the GFM row, and `_TASKLIST_CHECKBOX`
@@ -526,18 +527,22 @@ Same directory is the point: `rename(2)` is only atomic within one
 filesystem. A reader never sees a half-written state file, and a crash leaves
 the previous good version in place.
 
-## `cedit/mdcore/` — VENDORED AND FROZEN
+## `cedit/mdcore/` — FROZEN
 
 **Do not refactor, reformat or "improve" anything under `cedit/mdcore/`.** It
-is a verbatim copy of the markdown-localization repo's parser and diff
-engine. A change to hashing or segmentation moves every hash already recorded
-in consumers' `.cedit/` state, turning their next `sync` into a wall of false
-conflicts against blocks nobody touched. Fixes belong upstream and arrive here
-as a re-vendoring. See *Reuse rules* in SPEC.md and invariant 1 in AGENTS.md.
+holds the parser and the diff engine, and a change to canonicalisation,
+hashing or segmentation moves every hash already recorded in consumers'
+`.cedit/` state, turning their next `sync` into a wall of false conflicts
+against blocks nobody touched. Deliberate changes are possible and have a
+runbook of their own:
+[.claude/rules/hash-stability.md](.claude/rules/hash-stability.md) — how to
+tell a hash-moving change from a hash-neutral one, the drift check
+(`tests/parser_contract.py`) that decides it, and what consumers do when
+hashes moved. See also *Reuse rules* in SPEC.md and invariant 1 in AGENTS.md.
 
-That includes the parts cedit does not use. The package is vendored whole, on
-purpose, so re-vendoring is a copy rather than a merge — do not "tidy up" the
-unused surface.
+That includes the parts cedit does not use: they are inert, and leaving them
+alone keeps this module's diff readable. Removing them is hash-neutral and
+allowed — as its own change, with the drift check green either side of it.
 
 ### `mdcore/utils.py` — the pinned parser
 
@@ -586,8 +591,8 @@ What **cedit actually calls**:
 similarity score, which is why an upstream reflow (80 cols → 72) is a no-op
 for the overlay.
 
-What is vendored but **unused by cedit** — the localization pipeline's own
-surface, kept so the copy stays verbatim: `plan` (`:395`) and `WorkItem`
+What is **unused by cedit** — the translation-planning surface, inert here:
+`plan` (`:395`) and `WorkItem`
 (`:300`), `diff_trees` (`:197`) with `_diff_node` / `_diff_children` /
 `_align_window` / `_detect_moves` and `Op` / `KINDS`, `similarity` (`:160`),
 `tm_keys` (`:478`), `_placeholders` (`:339`), `_units_under` (`:358`),
@@ -608,7 +613,7 @@ names are the durable reference.
 
 | # (AGENTS.md) | Enforced / carried by |
 | --- | --- |
-| 1 — `mdcore/` frozen | Convention, not code: `cedit/mdcore/__init__.py`, the vendoring notices at `mdcore/tree_diff.py:1-21` and `mdcore/utils.py:1-9`, and SPEC.md's *Reuse rules*. Nothing in the program can catch a refactor here — review has to |
+| 1 — `mdcore/` frozen | Convention plus one check: the freeze notices at `mdcore/__init__.py`, `mdcore/tree_diff.py:1-14` and `mdcore/utils.py:1-9`, and SPEC.md's *Reuse rules*. Nothing can catch a *refactor* — review has to — but `tests/parser_contract.py` catches any refactor that changed behaviour |
 | 2 — exact pins | `requirements.txt` (the rationale is in the file itself) → `mdcore/utils.make_parser` (`utils.py:16`) → `blocks.canonicalise` (`blocks.py:96`) → every `Block.hash` and `ParsedDoc.doc_hash` |
 | 3 — no silent clobber | `merge3.merge` (`merge3.py:240-241`) records the conflict **and** splices the local text; `Conflict` carries all three versions (`merge3.py:81`) and `state.set_entry` persists them; `cli.cmd_sync` (`cli.py:159-163`) refuses to sync a doc with open conflicts; `cli.cmd_resolve` (`cli.py:257`) is the only path that takes upstream text |
 | 4 — exit codes | `cli.main` (`cli.py:377-379`) maps four exception types to 2; `cli.cmd_sync` (`cli.py:214-216`) and `cli.cmd_status` (`cli.py:243`) are the only sources of 1 |
@@ -649,7 +654,7 @@ prerelease riding along under `continue-on-error`) are excluded: they are
 early warning, not claimed support.
 
 ```bash
-venv/bin/python3 -m pytest                                   # 29 tests, no network, <1s
+venv/bin/python3 -m pytest                                   # 31 tests, no network, <1s
 venv/bin/python3 -m pytest tests/test_merge3.py -k reapply   # one test / one file
 venv/bin/python3 -m cedit --help                             # the CLI
 ```
@@ -688,9 +693,12 @@ same Markdown hashes to, everywhere, retroactively.
 | Change `splice_block`, `render_verified`, `cli` output, `store`, `state` | no | downstream of hashing |
 
 The first five rows are all invariant-1/2 territory and four of them are in
-vendored code you should not be editing at all — the row exists to say what
+frozen code you should not be editing at all — the row exists to say what
 *would* happen, not to license it. Where a hash-moving change is genuinely
-required, it arrives as a re-vendoring plus a pin bump, together.
+required, it goes through
+[.claude/rules/hash-stability.md](.claude/rules/hash-stability.md): classify
+it, re-record the baseline in the same commit, and say so in the release
+notes.
 
 **What actually breaks in a consumer repo**, concretely, because "moves
 every hash" is vague about damage:
@@ -749,9 +757,10 @@ Six places, and the last three are what gets forgotten:
 ### Recipe: a new block kind
 
 The block classes are `tree_diff.UNIT_PARENTS` and `tree_diff.OPAQUE`
-(`tree_diff.py:42,45`) — **vendored**, so this is a re-vendoring, and it is
-hash-moving by row 5 of the table above. Assuming that is settled upstream,
-the cedit-side work is:
+(`tree_diff.py:42,45`) — **frozen**, and this is hash-moving by row 5 of the
+table above. Assuming that is settled through
+[.claude/rules/hash-stability.md](.claude/rules/hash-stability.md), the rest
+of the work is:
 
 1. `blocks.parse_doc` (`blocks.py:101`) — the walk already keys off those
    two sets and does not descend into a block, so a new member usually needs
@@ -774,7 +783,7 @@ the cedit-side work is:
 
 ### Recipe: changing alignment behaviour
 
-`align.align` (`align.py:42`) is cedit's own, not vendored, and is the safe
+`align.align` (`align.py:42`) is outside the frozen core, and is the safe
 place to experiment: nothing it does reaches a stored hash. The four passes
 run LCS → in-window greedy → 1-for-1 positional fallback → global move then
 global fuzzy, and the order matters — the positional fallback
@@ -848,8 +857,9 @@ Then, in order of how easily each is forgotten:
   a release-note-and-migration change, not a patch.
 - Did the change alter the doc-visible surface (a flag, an exit code, an
   output line)? USERGUIDE §5 is per-flag and will drift silently.
-- Did you edit anything under `cedit/mdcore/`? That is invariant 1; the fix
-  belongs upstream and arrives here as a re-vendoring.
+- Did you edit anything under `cedit/mdcore/`? That is invariant 1 — read
+  [.claude/rules/hash-stability.md](.claude/rules/hash-stability.md) and run
+  `venv/bin/python3 tests/parser_contract.py`.
 - Did you touch `.github/workflows/`? Read
   [.claude/rules/release-pipeline.md](.claude/rules/release-pipeline.md)
   first — and never put a CI skip marker in a commit subject.

@@ -25,9 +25,11 @@ the same thing you did.
 
 Using cedit? You want USERGUIDE.md. The last three are for working *on* it.
 
-cedit grew out of the `markdown-localization` research repo, whose pinned
-parser and Merkle-hash diff engine are vendored — frozen — in
+The pinned parser and the Merkle-hash diff engine live — frozen — in
 [`cedit/mdcore/`](https://github.com/sdlctools/cedit/tree/main/cedit/mdcore/).
+Every hash cedit records is a function of them, so they change only through
+the drift check described in
+[.claude/rules/hash-stability.md](https://github.com/sdlctools/cedit/blob/main/.claude/rules/hash-stability.md).
 
 ## Install
 
@@ -63,7 +65,7 @@ Developing *cedit* rather than using it? Work from a source checkout:
 python3 -m venv venv
 venv/bin/pip install -r requirements.txt   # the parsing stack is pinned EXACTLY — see the file
 venv/bin/pip install -e .                  # optional: only to run cedit from another repo
-venv/bin/python3 -m pytest                 # 29 tests, no network
+venv/bin/python3 -m pytest                 # 31 tests, no network
 ```
 
 ## Quickstart
@@ -130,8 +132,8 @@ in [USERGUIDE.md](https://github.com/sdlctools/cedit/blob/main/USERGUIDE.md).
 | `cedit/blocks.py` | block extraction, splicing, render-and-verify |
 | `cedit/state.py` | `.cedit/` — base snapshots, manifest (+ conflicts), overlay |
 | `cedit/store.py` | atomic writes: temp file + `rename(2)`, so a crash never leaves half-written state |
-| `cedit/mdcore/` | **vendored, frozen**: pinned parser + tree_diff from markdown-localization |
-| `tests/` | merge matrix + end-to-end CLI lifecycle + packaging metadata |
+| `cedit/mdcore/` | **frozen**: the pinned parser + tree_diff — every recorded hash is a function of these |
+| `tests/` | merge matrix + end-to-end CLI lifecycle + packaging metadata + the parser drift check |
 | `pyproject.toml` | packaging metadata: the exact runtime pins, the `cedit` console script, explicit package discovery |
 | `.github/workflows/tests.yml` | the suite on 3.10 – 3.14, installed from `requirements.txt` |
 
