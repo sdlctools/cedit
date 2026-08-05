@@ -1513,4 +1513,5 @@ so diffs stay local and reviewable.
 | --- | --- |
 | [README.md](README.md) | the two-minute version: setup, quickstart, layout |
 | [SPEC.md](SPEC.md) | the normative design — merge matrix, sync algorithm, state format, reuse rules, phases |
-| [AGENTS.md](AGENTS.md) | working on cedit itself: architecture, invariants, repo workflow |
+| [AGENTS.md](AGENTS.md) | working on cedit itself: orientation, invariants, repo workflow |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | the implementation module by module, and the recipes for extending it |

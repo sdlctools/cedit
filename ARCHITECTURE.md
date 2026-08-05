@@ -1,8 +1,10 @@
-# cedit source map
+# cedit architecture
 
 Code-level reference for the `cedit` implementation: what every module,
 function and dataclass actually does, how a call flows from `cli.main` down
-to the splice, and where each of AGENTS.md's five invariants is enforced.
+to the splice, where each of AGENTS.md's five invariants is enforced, and —
+in [Changing cedit](#changing-cedit) at the end — what to touch when you
+extend it.
 
 **This file is a reference, not an instruction set.** It is deliberately not
 `@`-imported by `AGENTS.md` — read it when you are about to change code,
@@ -12,13 +14,14 @@ Where the other documents stop:
 
 | Document | Answers |
 | --- | --- |
-| [README.md](../../README.md) | setup, quickstart, exit codes, repo layout |
-| [USERGUIDE.md](../../USERGUIDE.md) | command reference, task flows, conflict lifecycle, troubleshooting |
-| [SPEC.md](../../SPEC.md) | normative design — merge matrix, sync algorithm, state format, reuse rules, phases |
-| [AGENTS.md](../../AGENTS.md) | orientation and the five invariants |
-| **this file** | the implementation that realises them |
+| [README.md](README.md) | setup, quickstart, exit codes, repo layout |
+| [USERGUIDE.md](USERGUIDE.md) | command reference, task flows, conflict lifecycle, troubleshooting |
+| [SPEC.md](SPEC.md) | normative design — merge matrix, sync algorithm, state format, reuse rules, phases |
+| [AGENTS.md](AGENTS.md) | orientation and the five invariants |
+| [.claude/rules/release-pipeline.md](.claude/rules/release-pipeline.md) | the three versioning workflows and how they break |
+| **this file** | the implementation that realises them, and how to change it |
 
-Nothing here restates behaviour those four define. Where a design decision
+Nothing here restates behaviour those five define. Where a design decision
 is at issue, SPEC.md wins; this file tells you which lines carry it out.
 
 ## The call graph
@@ -655,3 +658,203 @@ Use `venv/bin/python3`, never a bare `python3` — the interpreter needs the
 pinned parsing stack. `.github/workflows/tests.yml` runs the same suite on
 3.10 – 3.14, but it gates nothing (see AGENTS.md) — this local run is still
 the gate.
+
+## Changing cedit
+
+Everything above describes the code as it stands. This section is the other
+direction: given a change you want to make, what does it touch, and what
+does it break in a consumer repo that already has `.cedit/` state committed.
+
+Read [the blast radius](#the-blast-radius) first. It is the one thing that
+distinguishes a change you can make freely from a change that costs every
+consumer a manual recovery, and it is not visible from any single file.
+
+### The blast radius
+
+The hashes in a consumer's `.cedit/` are taken over exactly one pipeline —
+`make_parser` → `canonicalise` → `hash_tree` (`utils.py:16`, `blocks.py:96`,
+`tree_diff.py:86`). Any change that perturbs that pipeline changes what the
+same Markdown hashes to, everywhere, retroactively.
+
+| Change | Moves hashes? | Consequence |
+| --- | --- | --- |
+| Bump a pin in `requirements.txt` / `pyproject.toml` | **yes, possibly** | invariant 2 — a minor release can change what the parser emits |
+| Install (or stop installing) an mdformat plugin | **yes, possibly** | `make_parser` appends *every installed* extension, so the environment is part of the parser identity |
+| Touch `make_parser`'s options, or `ast_to_markdown`'s mdformat options | **yes** | changes the canonical form itself, not just the hash |
+| Touch `hash_tree`, `norm`, `own_text`, `_unit_source` | **yes** | the hash function, directly |
+| Change `UNIT_PARENTS` or `OPAQUE` (`tree_diff.py:42,45`) | **yes** | re-segments the document: different blocks, therefore different keys, even though the hash function is unchanged |
+| Change `SIM_THRESHOLD`, `FUZZY_THRESHOLD`, `align`'s passes | no | pairing only — recomputed on every run |
+| Change the merge matrix in `merge3.merge` | no | decides over hashes, does not produce them |
+| Change `splice_block`, `render_verified`, `cli` output, `store`, `state` | no | downstream of hashing |
+
+The first five rows are all invariant-1/2 territory and four of them are in
+vendored code you should not be editing at all — the row exists to say what
+*would* happen, not to license it. Where a hash-moving change is genuinely
+required, it arrives as a re-vendoring plus a pin bump, together.
+
+**What actually breaks in a consumer repo**, concretely, because "moves
+every hash" is vague about damage:
+
+1. **Conflict keys in `manifest.json` become unmatchable.** The overlay is
+   derived and simply re-derives itself, but conflicts are authored state
+   (`state.py` — authored vs derived). A recorded conflict is keyed
+   `<hash>:<occurrence>`; after a hash move, `cedit resolve <doc> <key>`
+   cannot find the block, and `_match_conflict` (`cli.py:246`) reports the
+   open keys as if the user mistyped.
+2. **The committed base snapshots are stale canonical form.** They were
+   written by the *old* `ast_to_markdown`. The next `sync` canonicalises
+   upstream with the new one and compares (`cli.py:174`), so a document that
+   did not change upstream at all is no longer `up to date`, and
+   `local_edits(base, working)` reads the renderer delta as user edits — a
+   wall of false conflicts against blocks nobody touched.
+3. **`base_doc_hash` in the manifest goes stale.** This one is cosmetic:
+   nothing verifies it, it is written by `set_entry` and printed by
+   `cmd_status`. Do not let it reassure you — the absence of a check is why
+   1 and 2 surface as confusing merges rather than as a clean error.
+
+There is no schema-version gate to catch this: `State.__init__`
+(`state.py:48-53`) uses `MANIFEST_SCHEMA` / `OVERLAY_SCHEMA` only as the
+default for a *missing* file and never validates the `schema` key of one it
+reads. If you ever do ship a hash-moving change, that check — and a
+`cedit migrate` that re-snapshots bases and re-keys conflicts — is the
+prerequisite, not an afterthought.
+
+### Recipe: a new subcommand
+
+Six places, and the last three are what gets forgotten:
+
+1. `cli.build_arg_parser` (`cli.py:327`) — `sub.add_parser(...)`, then
+   `set_defaults(func=cmd_yours)`. `--from` is `dest="from_"` by convention
+   (`from` is a keyword).
+2. `cli.cmd_yours` — take `args`, return an int. Raise `StateError` for
+   anything the user can fix; `main` maps it to 2. Do not `sys.exit`.
+3. Decide the exit code deliberately — invariant 4. `1` means "unresolved
+   conflicts", nothing else; only `cmd_sync` and `cmd_status` produce it
+   today, both as a bool accumulated across docs and applied only once `rc`
+   is known to be 0.
+4. `tests/test_cli.py` — drive it through `cli.main` in a `tmp_path` repo,
+   as the existing tests do; assert the exit code, not just the output.
+5. **The count "five" and the literal subcommand list are hard-coded in
+   seven doc locations** — `README.md:20` and `README.md:127`, `AGENTS.md`'s
+   architecture table (`AGENTS.md:72`), and in `USERGUIDE.md` the TOC entry
+   (`:18`), the §3 heading (`:129`) and both lines of the `--help`
+   transcript (`:279`, `:285`). The exit-code matrix at `USERGUIDE.md:1410`
+   names the commands without counting them, and `SPEC.md` §CLI deliberately
+   says "same subcommand set" instead of a number. Nothing tests any of
+   this; grep for `five subcommands` and for the literal
+   `{snapshot,diff,sync,status,resolve}`.
+6. If it can write, route it through `store.atomic_write_text` and mirror
+   `cmd_sync`'s ordering: working file first, state second.
+
+### Recipe: a new block kind
+
+The block classes are `tree_diff.UNIT_PARENTS` and `tree_diff.OPAQUE`
+(`tree_diff.py:42,45`) — **vendored**, so this is a re-vendoring, and it is
+hash-moving by row 5 of the table above. Assuming that is settled upstream,
+the cedit-side work is:
+
+1. `blocks.parse_doc` (`blocks.py:101`) — the walk already keys off those
+   two sets and does not descend into a block, so a new member usually needs
+   no change here. Confirm it does not contain nodes you still want walked.
+2. `blocks.splice_block` (`blocks.py:177`) — the mutation. Opaque nodes set
+   `token.content` (plus `token.info` for a fence); units go through
+   `parse_inline`. A kind that is neither needs its own branch, and it must
+   return `False` rather than half-splice when there is nothing to write
+   into — `merge3._splice_or_conflict` turns `False` into a conflict, which
+   is the safe degradation.
+3. `Block.compare_text` (`blocks.py:75`) — if the new kind has an
+   attribute that is part of its editable surface the way `info` is for a
+   fence, it belongs here, or an edit to it will score as a replacement
+   instead of an edit.
+4. `blocks.block_signature` (`blocks.py:140`) — the render-verify gate. It
+   stops at `inline`; if the new kind's structure must be checked more
+   finely, this is where.
+5. Add a `tests/test_merge3.py` case in the shape of
+   `test_front_matter_edit_reapplies` — the existing per-kind precedent.
+
+### Recipe: changing alignment behaviour
+
+`align.align` (`align.py:42`) is cedit's own, not vendored, and is the safe
+place to experiment: nothing it does reaches a stored hash. The four passes
+run LCS → in-window greedy → 1-for-1 positional fallback → global move then
+global fuzzy, and the order matters — the positional fallback
+(`align.py:84-90`) exists because a short edit in a table cell scores 0.18
+and would otherwise be misread as structural drift and *rejected*, not
+merely mispaired.
+
+Two readings of the same output, and a change must satisfy both: against the
+local copy, `moved` and `DELETED` are fatal (`_describe_structural` raises
+`StructuralDrift`); against upstream, they are counters. Loosening pairing
+therefore trades false structural-drift rejections for wrong reapplications
+— errors of different severity, since one refuses to write and the other
+writes the wrong thing. Prefer the refusal.
+
+### Recipe: a new field in the state files
+
+`manifest.json` is authored, `overlay.json` is derived. Which one you are
+adding to decides the work:
+
+- **Derived** (overlay) — add it to `LocalEdit` and to `LocalEdit.as_dict`
+  (`merge3.py:47`), and to nothing else. Note the existing precedent:
+  `base_index` and `sim` are deliberately *not* serialised because they are
+  recomputed on every derivation, and persisting a recomputed value only
+  invites staleness. Apply the same test to your field.
+- **Authored** (manifest) — `Conflict.as_dict` / `from_dict`
+  (`merge3.py:81`) and `state.set_entry` (`state.py:77`). `from_dict` must
+  default the new field for entries written by an older cedit, exactly as it
+  defaults every field to `""` today and `upstream_text` to `None`. There is
+  no migration step to lean on (see the blast radius above), so
+  backward-compatible defaults are the whole compatibility story.
+
+Both files are written through `store.atomic_write_text` with docs re-sorted
+on every save, so state diffs stay local — keep any new container sorted for
+the same reason.
+
+### Where phase 2 and phase 3 attach
+
+SPEC.md §Phases defines them; these are the seams they land on.
+
+**Phase 2, structural local edits.** The wall is one function:
+`merge3.local_edits` (`merge3.py:184-187`) raises `StructuralDrift` on
+anything `_describe_structural` reports. Because `cmd_snapshot`, `cmd_diff`,
+`cmd_status`, `cmd_resolve` and `merge` all funnel through it, lifting the
+restriction is one change, not five — that funnelling is deliberate, so keep
+it. What follows from lifting it: `LocalEdit` grows an anchor (the preceding
+base unit's hash, per SPEC) and an operation kind, `merge`'s single pass over
+`base.blocks` (`merge3.py:225-246`) has to emit insertions positioned
+relative to that anchor rather than only splicing in place, and
+`cmd_resolve`'s refusal of `--take local` on an orphan (`cli.py:268-273`)
+becomes decidable instead of categorical. The render-verify gate
+(`render_verified`) is what keeps this honest — it will catch a positioned
+insertion that re-parses into different structure, which is the failure mode
+phase 2 introduces.
+
+**Phase 3, assisted rebase.** Attaches at exactly one row of the matrix: the
+CONFLICT branch (`merge3.py:240-241`), which today records the conflict and
+splices the local text. A machine-proposed port is an extra field on
+`Conflict` plus a `review_status` on the resulting `LocalEdit` — it must not
+change what the working file gets, or invariant 3 is gone. `resolve` stays
+the only gate.
+
+### Before you commit
+
+```bash
+venv/bin/python3 -m pytest      # the gate — tests.yml is not a required check
+```
+
+Then, in order of how easily each is forgotten:
+
+- Did you move hashes? If yes, stop and re-read the blast radius — this is
+  a release-note-and-migration change, not a patch.
+- Did the change alter the doc-visible surface (a flag, an exit code, an
+  output line)? USERGUIDE §5 is per-flag and will drift silently.
+- Did you edit anything under `cedit/mdcore/`? That is invariant 1; the fix
+  belongs upstream and arrives here as a re-vendoring.
+- Did you touch `.github/workflows/`? Read
+  [.claude/rules/release-pipeline.md](.claude/rules/release-pipeline.md)
+  first — and never put a CI skip marker in a commit subject.
+- Did you add a Python version, a classifier or a matrix leg? All three
+  move together or `test_supported_pythons_are_the_tested_pythons` fails.
+- Line numbers in this file are accurate as of the commit that last touched
+  it; the symbol names are the durable reference. If you moved code far,
+  fix the references you noticed — do not audit the whole file.

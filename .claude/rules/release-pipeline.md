@@ -7,7 +7,7 @@ what, who owns the version number at each step, and the failure modes that
 are not obvious from reading the YAML.
 
 **This file is a reference, not an instruction set.** Like
-[cedit-source-map.md](cedit-source-map.md) it is deliberately not
+[ARCHITECTURE.md](../../ARCHITECTURE.md) it is deliberately not
 `@`-imported by `AGENTS.md` — read it when you are about to touch
 `.github/workflows/`, cut a release, or explain why a release did not
 happen.
@@ -17,6 +17,7 @@ Where the other documents stop:
 | Document | Answers |
 | --- | --- |
 | [AGENTS.md](../../AGENTS.md) | branch naming, Jira keys, gitflow parents, the local pytest gate |
+| [ARCHITECTURE.md](../../ARCHITECTURE.md) | the implementation, and what to touch to change it |
 | the SDLC policy | *why* the phases exist (feature freeze, QA on the branch, hotfix path) |
 | **this file** | what the automation actually does, and how it breaks |
 
