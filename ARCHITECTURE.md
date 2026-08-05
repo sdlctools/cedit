@@ -577,15 +577,15 @@ What **cedit actually calls**:
 
 | Symbol | Called from | Role |
 | --- | --- | --- |
-| `hash_tree(node)` (`tree_diff.py:76`) | `blocks.parse_doc` | annotates every node with `.h` (16-hex sha256 prefix) and `.size`. `hash(node) = H(type, tag, info, own_text, hash(c1)…hash(cn))`; a unit's identity is its inline source. **`map` (line numbers) and `level` are deliberately excluded**, so an insert above a block does not change its hash |
+| `hash_tree(node)` (`tree_diff.py:76`) | `blocks.parse_doc` | annotates every node with `.h` (16-hex sha256 prefix). `hash(node) = H(type, tag, info, own_text, hash(c1)…hash(cn))`; a unit's identity is its inline source. **`map` (line numbers) and `level` are deliberately excluded**, so an insert above a block does not change its hash |
 | `is_unit(node)` (`:52`), `OPAQUE` (`:38`) | `blocks.parse_doc` | the two block classes |
 | `own_text(node)` (`:66`), `attr(node, name)` (`:56`) | `blocks.parse_doc`, `blocks.block_signature` | safe accessors — the root node raises on `tag`/`content`/`info` |
-| `_unit_source(node)` (`:107`) | `blocks.parse_doc` | a unit's inline `.content` — its identity |
-| `_heading_trail(node)` (`:140`) | `blocks.parse_doc` | the `context` string, ancestors joined with ` › ` |
-| `ratio(a, b)` (`:124`) | `align._sim` | normalised text similarity, `autojunk=False` (not optional — difflib's junk heuristic skews and de-symmetrises character-sequence scores past 200 items) |
-| `SIM_THRESHOLD = 0.4` (`:121`) | `align.align` | pairing floor inside a replace window |
-| `FUZZY_THRESHOLD = 0.6` (`:160`) | `align.align` | floor for the global moved-and-edited pass |
-| `_focus(old, new)` (`:176`), `_clip(text, start)` (`:170`) | `cli._pair`, `cli._print_conflict` | display clipping, `WIDTH = 110` |
+| `_unit_source(node)` (`:103`) | `blocks.parse_doc` | a unit's inline `.content` — its identity |
+| `_heading_trail(node)` (`:136`) | `blocks.parse_doc` | the `context` string, ancestors joined with ` › ` |
+| `ratio(a, b)` (`:120`) | `align._sim` | normalised text similarity, `autojunk=False` (not optional — difflib's junk heuristic skews and de-symmetrises character-sequence scores past 200 items) |
+| `SIM_THRESHOLD = 0.4` (`:117`) | `align.align` | pairing floor inside a replace window |
+| `FUZZY_THRESHOLD = 0.6` (`:156`) | `align.align` | floor for the global moved-and-edited pass |
+| `_focus(old, new)` (`:172`), `_clip(text, start)` (`:166`) | `cli._pair`, `cli._print_conflict` | display clipping, `WIDTH = 110` |
 
 `norm(text)` (`:43`) collapses whitespace before hashing and before every
 similarity score, which is why an upstream reflow (80 cols → 72) is a no-op
