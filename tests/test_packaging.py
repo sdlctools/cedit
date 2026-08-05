@@ -13,8 +13,7 @@ import importlib
 import importlib.metadata
 import pathlib
 import re
-
-import pytest
+import tomllib  # stdlib since 3.11, and requires-python is >=3.12
 
 import cedit
 
@@ -47,8 +46,6 @@ def test_pyproject_pins_match_requirements_txt():
     consumer's parser differs from the one the tests ran against and every
     hash in their `.cedit/` state can move.
     """
-    tomllib = pytest.importorskip("tomllib")
-
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text("utf-8"))
     declared = pyproject["project"]["dependencies"]
 
@@ -70,6 +67,47 @@ def test_pyproject_pins_match_requirements_txt():
     # Every runtime dependency is pinned with ==, never loosened.
     for dep in declared:
         assert re.fullmatch(r"[A-Za-z0-9._-]+==[0-9][^,;]*", dep), dep
+
+
+def test_supported_pythons_are_the_tested_pythons():
+    """The classifiers, requires-python and the CI matrix are one list.
+
+    A `Programming Language :: Python :: X.Y` classifier is a claim that cedit
+    runs on X.Y, and `requires-python` is what pip enforces before installing.
+    Adding either without adding the matching leg to
+    `.github/workflows/tests.yml` puts the package back where CED-12 found it:
+    asserting support that nothing verifies. The 3.15-style advisory legs are
+    deliberately excluded — they carry `advisory: true`, are not in the
+    metadata, and cannot fail the job.
+    """
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text("utf-8"))
+
+    classified = {
+        c.rsplit(" ", 1)[-1]
+        for c in pyproject["project"]["classifiers"]
+        if re.fullmatch(r"Programming Language :: Python :: 3\.\d+", c)
+    }
+
+    workflow = (ROOT / ".github" / "workflows" / "tests.yml").read_text("utf-8")
+    matrix = re.search(r"^\s*python-version: \[(.+)\]\s*$", workflow, re.MULTILINE)
+    assert matrix, (
+        "could not find the python-version matrix in .github/workflows/tests.yml "
+        "— if the workflow was reformatted, update this test with it rather "
+        "than deleting it"
+    )
+    tested = set(re.findall(r'"(3\.\d+)"', matrix.group(1)))
+
+    assert classified == tested, (
+        f"classifiers claim {sorted(classified)} but CI tests {sorted(tested)} "
+        "— see the header comment in .github/workflows/tests.yml"
+    )
+
+    floor = pyproject["project"]["requires-python"]
+    oldest = min(tested, key=lambda v: int(v.split(".")[1]))
+    assert floor == f">={oldest}", (
+        f"requires-python is {floor!r} but the oldest tested version is "
+        f"{oldest} — pip would let an untested interpreter install cedit"
+    )
 
 
 # Every inline link and image target: the `](` of `[text](target)`,

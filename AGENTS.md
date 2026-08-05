@@ -35,7 +35,7 @@ precise, per-block conflict when upstream touched the same block you did.
 python3 -m venv venv
 venv/bin/pip install -r requirements.txt   # the parsing stack is pinned EXACTLY — see below
 venv/bin/pip install -e .                  # only needed to run cedit from another repo, not for tests
-venv/bin/python3 -m pytest                 # 28 tests, no network, <1s
+venv/bin/python3 -m pytest                 # 29 tests, no network, <1s
 venv/bin/python3 -m pytest tests/test_merge3.py -k reapply   # one test / one file
 venv/bin/python3 -m cedit --help           # the CLI
 ```
@@ -130,9 +130,17 @@ the jira-sdlc skills, not by hand**; each carries a
 subjects lead with the Jira key (`CED-7 Add ...`).
 
 `.github/workflows/` holds gitflow release automation, Jira transition on
-merge, the AI PR reviewer, and `tests.yml` — the suite on Python 3.10, 3.11,
-3.12 and 3.13, installed from `requirements.txt`, on every push to
-`development`/`main` and every pull request.
+merge, the AI PR reviewer, and `tests.yml` — the suite on Python 3.12, 3.13
+and 3.14, installed from `requirements.txt`, on every push to
+`development`/`main` and every pull request, plus an advisory 3.15 leg that
+reports but cannot fail the job.
+
+**The matrix, the classifiers and `requires-python` are one list.** Claiming a
+version no leg runs is the defect `tests.yml` was added to close, so change
+all three in the same commit —
+`tests/test_packaging.py::test_supported_pythons_are_the_tested_pythons`
+fails if they drift. Advisory legs are excluded from that check by design:
+they are not claimed support.
 
 **`tests.yml` gates nothing.** It is not a required status check, on purpose:
 a PR whose head commit carries `[skip ci]` emits *no* workflow runs at all
