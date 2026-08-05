@@ -12,12 +12,12 @@ Identity is the Merkle hash `tree_diff.hash_tree` assigns, disambiguated by
 per-hash occurrence index (a user may edit only the third copy of a repeated
 command — translation never had to care, editing does).
 
-The splice follows a strict invariant: block structure comes from the tree
+The splice follows strict invariants: block structure comes from the tree
 being spliced *into* and is never re-derived from replacement text; a unit
 splice replaces only the `inline` token's children/content (re-parsed with
 `parse_inline`, so text starting with `- ` stays a paragraph); an opaque
-splice replaces only the token's `content` (plus
-`info` for fences — that is where ```` ```bash ```` → ```` ```zsh ```` lives).
+splice replaces only the token's `content` (plus `info` for fences — that is
+where ```` ```bash ```` → ```` ```zsh ```` lives).
 Every render re-parses its own output and refuses to pass if the block
 structure moved (`StructureMismatch`).
 """

@@ -171,8 +171,8 @@ silently stops applying does not exist.
 4. Decide every base unit by the merge matrix; decide every upstream-new
    unit as *take upstream*.
 5. Build the merged document: **U's tree**, splicing REAPPLY/resolved-local
-   texts by hash — reusing the reassemble invariants: splice is the only
-   mutation, re-parse the rendered output and refuse to write if block
+   texts by hash — under the splice/verify invariants below: splice is the
+   only mutation, re-parse the rendered output and refuse to write if block
    structure moved.
 6. Write atomically (temp file + rename).
 7. Update `.cedit/base/<path>` to canonicalized U, rewrite manifest
@@ -220,14 +220,15 @@ hold:
   `_units_under`, `_unit_source`, `_opaque_under`, `ratio` and the
   thresholds — never re-derived, only consumed (`cedit/blocks.py`,
   `cedit/align.py`).
-- **Splice/verify**, carried into `cedit/blocks.py`: structure comes from
-  the tree being spliced into; the only mutations are an `inline` token's
-  children/content and an opaque token's `content` + `info`; replacements
-  re-parse through `parse_inline`; whitespace collapses in table cells;
-  the task-list checkbox token is carried across; every render re-parses
-  its own output and refuses on a moved block structure.
-- **Atomic writes**: temp-file-plus-rename discipline, in
-  `cedit/store.py`.
+- **Splice/verify**: cedit's own, in `cedit/blocks.py` — not vendored, and
+  it must not drift from the hashing it splices around. Structure comes
+  from the tree being spliced into; the only mutations are an `inline`
+  token's children/content and an opaque token's `content` + `info`;
+  replacements re-parse through `parse_inline`; whitespace collapses in
+  table cells; the task-list checkbox token is carried across; every render
+  re-parses its own output and refuses on a moved block structure.
+- **Atomic writes**: cedit's own, in `cedit/store.py` — a temp file in the
+  target directory plus `rename(2)`, never a direct write.
 
 ## Phases
 
