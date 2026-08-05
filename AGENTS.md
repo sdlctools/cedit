@@ -16,8 +16,11 @@ read it before changing code.
 [.claude/rules/release-pipeline.md](.claude/rules/release-pipeline.md) does
 the same for the three versioning workflows (dev builds, release cut,
 release) — read it before touching `.github/workflows/` or cutting a
-release. This file is the orientation and the rules — it does not restate
-any of them.
+release, and
+[.claude/rules/manual-release.md](.claude/rules/manual-release.md) is the
+by-hand runbook for the releases that automation cannot finish (any release
+that changes a workflow file). This file is the orientation and the rules —
+it does not restate any of them.
 
 ## What this is
 
