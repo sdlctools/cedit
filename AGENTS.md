@@ -8,8 +8,12 @@ Depth lives elsewhere: [README.md](README.md) is the user-facing usage
 (setup, quickstart, exit codes, layout), [USERGUIDE.md](USERGUIDE.md) is the
 task-oriented how-to (command reference, flows, conflict lifecycle,
 troubleshooting), [SPEC.md](SPEC.md) is the normative design (merge matrix,
-sync algorithm, state format, reuse rules, phases). This file is the
-orientation and the rules — it does not restate any of them.
+sync algorithm, state format, reuse rules, phases), and
+[.claude/rules/cedit-source-map.md](.claude/rules/cedit-source-map.md) is the
+code-level map of the implementation (every module's functions, dataclasses
+and constants, the call graph, where each invariant below is enforced) —
+read it before changing code. This file is the orientation and the rules — it
+does not restate any of them.
 
 ## What this is
 
