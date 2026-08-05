@@ -8,18 +8,27 @@ but your environment runs `zsh`? Rewrite the fences once — every later
 you precisely (per block, with all three versions) when upstream touched
 the same thing you did.
 
-How to drive it: [USERGUIDE.md](USERGUIDE.md) — the full guide, with a
-five-minute tour, a per-flag command reference, worked conflict resolutions
-and troubleshooting. Design: [SPEC.md](SPEC.md). Grown out of the
-`markdown-localization` research repo, whose pinned parser and Merkle-hash
-diff engine are vendored in [`cedit/mdcore/`](cedit/mdcore/).
+## Documentation
+
+| Document | What's in it |
+| --- | --- |
+| [USERGUIDE.md](USERGUIDE.md) | **How to drive it** — a five-minute tour, a per-flag reference for all five subcommands, the conflict lifecycle worked end to end, the `.cedit/` layout, a cookbook and a troubleshooting table |
+| [SPEC.md](SPEC.md) | **The design** — the merge matrix, the normative sync algorithm, the state format, the reuse rules, and what is phase 1 vs. phase 2 vs. never |
+| [AGENTS.md](AGENTS.md) | **Changing cedit itself** — build and test commands, the architecture in one table, and the five invariants a change must not violate. `CLAUDE.md` exists only to pull this in, so every AI assistant reads the same file |
+| [.claude/rules/cedit-source-map.md](.claude/rules/cedit-source-map.md) | **The code, module by module** — every function, dataclass field and constant, the end-to-end call graph from `cli.main` down to the splice, and where each invariant is actually enforced |
+
+Using cedit? You want USERGUIDE.md. The last two are for working *on* it.
+
+cedit grew out of the `markdown-localization` research repo, whose pinned
+parser and Merkle-hash diff engine are vendored — frozen — in
+[`cedit/mdcore/`](cedit/mdcore/).
 
 ## Setup
 
 ```bash
 python3 -m venv venv
 venv/bin/pip install -r requirements.txt   # the parsing stack is pinned EXACTLY — see the file
-venv/bin/pip install -e .                  # puts `cedit` on the path so it runs from any directory
+venv/bin/pip install -e .                  # so `python3 -m cedit` works from any directory (no `cedit` executable is installed)
 venv/bin/python3 -m pytest                 # 24 tests, no network
 ```
 
