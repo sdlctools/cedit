@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cedit"
-version = "0.1.6-dev.4"
+version = "0.1.6-dev.5"
 description = "Continuous editing of vendored Markdown via 3-way structural merge"
 readme = "README.md"
 # 3.10 is the oldest supported version, and every version from here up is
