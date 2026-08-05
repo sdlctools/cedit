@@ -3,14 +3,14 @@
 A document is a sequence of **edit blocks** in document order:
 
 - *inline units* — the nodes owning an `inline` child (`heading`,
-  `paragraph`, `th`, `td`), exactly `tree_diff`'s translation units;
+  `paragraph`, `th`, `td`), exactly `tree_diff.is_unit`;
 - *opaque blocks* — `fence`, `code_block`, `html_block`, `front_matter`,
   `hr`. `tree_diff` hashes these but never makes them units; here they are
   first-class, because the motivating local edit is a rewritten code fence.
 
 Identity is the Merkle hash `tree_diff.hash_tree` assigns, disambiguated by
-per-hash occurrence index (a user may edit only the third copy of a repeated
-command — translation never had to care, editing does).
+per-hash occurrence index: a user may have adapted only the third copy of a
+repeated command, so two byte-identical blocks have to stay distinct.
 
 The splice follows strict invariants: block structure comes from the tree
 being spliced *into* and is never re-derived from replacement text; a unit

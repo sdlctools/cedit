@@ -28,13 +28,13 @@ from markdown_it.tree import SyntaxTreeNode
 # Node classification
 # ---------------------------------------------------------------------------
 
-# Blocks that carry translatable prose. In markdown-it's tree these are exactly
-# the nodes that own an `inline` child: the inline node's `.content` is the raw
-# markdown source of the segment (`` Reference for `x`. Read **this** ``), which
-# is what we hand to the translator.
+# Blocks that carry prose. In markdown-it's tree these are exactly the nodes
+# owning an `inline` child: that child's `.content` is the raw markdown source
+# of the segment (`` Reference for `x`. Read **this** ``) — the text a local
+# adaptation rewrites. SPEC.md, *Edit blocks*, maps this module's vendored names.
 UNIT_PARENTS = {"heading", "paragraph", "th", "td"}
 
-# Opaque blocks: hashed so we notice they moved/changed, never translated.
+# Opaque blocks: hashed, so a change or a move is noticed, but never units.
 OPAQUE = {"fence", "code_block", "html_block", "front_matter", "hr"}
 
 _WS = re.compile(r"\s+")
@@ -43,8 +43,8 @@ _WS = re.compile(r"\s+")
 def norm(text: str) -> str:
     """Whitespace-insensitive normalisation.
 
-    Reflowing a paragraph (80 cols -> 72 cols) must NOT invalidate its
-    translation, so line breaks and runs of spaces collapse before hashing.
+    Reflowing a paragraph (80 cols -> 72 cols) must NOT re-key it and strand
+    the local edit overlaid on it, so whitespace collapses before hashing.
     """
     return _WS.sub(" ", text or "").strip()
 
@@ -138,8 +138,8 @@ def ratio(a: str, b: str) -> float:
 
 
 def _heading_trail(node: SyntaxTreeNode) -> str:
-    """Ancestor headings above `node` — the context an LLM needs to translate
-    a fragment correctly without being told to translate the context itself."""
+    """Ancestor headings above `node` — the trail that names a block to a
+    human: display only, but recorded in `.cedit/`'s conflict entries."""
     trail: list[str] = []
     cur = node
     while cur is not None and cur.type != "root":
@@ -155,8 +155,8 @@ def _heading_trail(node: SyntaxTreeNode) -> str:
     return " › ".join(reversed(trail))
 
 
-# Fuzzy matches below this are worse than translating from scratch; SDL/Trados
-# and memoQ default their TM cut-off to 70% for the same reason.
+# Floor for the moved-and-edited pairing: a weaker match costs more to repair
+# than to redo — why SDL/Trados and memoQ cut translation-memory reuse at 70%.
 FUZZY_THRESHOLD = 0.6
 
 
