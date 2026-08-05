@@ -12,8 +12,12 @@ sync algorithm, state format, reuse rules, phases), and
 [.claude/rules/cedit-source-map.md](.claude/rules/cedit-source-map.md) is the
 code-level map of the implementation (every module's functions, dataclasses
 and constants, the call graph, where each invariant below is enforced) —
-read it before changing code. This file is the orientation and the rules — it
-does not restate any of them.
+read it before changing code.
+[.claude/rules/release-pipeline.md](.claude/rules/release-pipeline.md) does
+the same for the three versioning workflows (dev builds, release cut,
+release) — read it before touching `.github/workflows/` or cutting a
+release. This file is the orientation and the rules — it does not restate
+any of them.
 
 ## What this is
 
