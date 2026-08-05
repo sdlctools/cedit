@@ -1,0 +1,32 @@
+# TEMPORARY diagnostic workflow (CI trigger lab). Delete when done.
+# On a push to ci-lab/src-*, opens a PR into ci-lab/base using GITHUB_TOKEN,
+# so we can compare "PR created by GITHUB_TOKEN" vs "PR created by a user PAT"
+# with respect to whether merging it produces pull_request workflow runs.
+name: CI lab - open PR as bot
+
+on:
+  push:
+    branches:
+      - 'ci-lab/src-*'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  open:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Open PR as github-actions[bot]
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          draft=""
+          if [ -f LAB_DRAFT ]; then draft="--draft"; fi
+          url=$(gh pr create --base ci-lab/base --head "${BRANCH}" ${draft} \
+            --title "ci-lab: bot PR from ${BRANCH}" \
+            --body "diagnostic - opened by GITHUB_TOKEN")
+          echo "::notice::$url"
