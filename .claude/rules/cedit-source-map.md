@@ -633,13 +633,19 @@ plus the edge cases that shaped the code (`test_local_insertion_is_structural_dr
 with `importlib.metadata.version` patched to raise), and
 `test_pyproject_pins_match_requirements_txt`, which fails if pyproject's
 `dependencies` and `requirements.txt` drift apart — invariant 2 has to hold
-for `pip install cedit` consumers too, not just source checkouts.
+for `pip install cedit` consumers too, not just source checkouts. A third,
+`test_readme_links_are_absolute`, holds the line `README.md` is also the
+package's PyPI long description: PyPI does not rewrite relative links, so
+one resolves against `pypi.org/project/cedit/` and 404s while looking
+perfectly fine in a GitHub preview.
 
 ```bash
-venv/bin/python3 -m pytest                                   # 27 tests, no network, <1s
+venv/bin/python3 -m pytest                                   # 28 tests, no network, <1s
 venv/bin/python3 -m pytest tests/test_merge3.py -k reapply   # one test / one file
 venv/bin/python3 -m cedit --help                             # the CLI
 ```
 
 Use `venv/bin/python3`, never a bare `python3` — the interpreter needs the
-pinned parsing stack. There is no CI test job; this run is the gate.
+pinned parsing stack. `.github/workflows/tests.yml` runs the same suite on
+3.10 – 3.13, but it gates nothing (see AGENTS.md) — this local run is still
+the gate.

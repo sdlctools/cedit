@@ -1,10 +1,12 @@
 """Packaging metadata — the parts that can silently rot.
 
 Not a substitute for building the wheel (that happens in release.yml), but
-these two things drift without anyone noticing: `__version__` now comes from
-distribution metadata rather than a literal, and pyproject's dependency pins
+these things drift without anyone noticing: `__version__` now comes from
+distribution metadata rather than a literal, pyproject's dependency pins
 have to stay byte-identical to requirements.txt or invariant 2 quietly stops
-holding for pip-installed consumers.
+holding for pip-installed consumers, and README.md doubles as the package's
+PyPI long description, where a relative link is a 404 nobody sees from a
+GitHub preview.
 """
 
 import importlib
@@ -68,3 +70,33 @@ def test_pyproject_pins_match_requirements_txt():
     # Every runtime dependency is pinned with ==, never loosened.
     for dep in declared:
         assert re.fullmatch(r"[A-Za-z0-9._-]+==[0-9][^,;]*", dep), dep
+
+
+# Every inline link and image target: the `](` of `[text](target)`,
+# `![alt](target)` and the badge form `[![alt](img)](target)` alike. Matching
+# on the closing bracket rather than on a whole `[...]` label is what catches
+# that last one — a nested `]` inside the label defeats any `\[[^\]]*\]` form,
+# silently exempting exactly the badges at the top of the file.
+_MD_LINK = re.compile(r"\]\(([^)\s]+)")
+
+
+def test_readme_links_are_absolute():
+    """README.md is the PyPI long description, and PyPI does not rewrite links.
+
+    `readme = "README.md"` in pyproject.toml means every link in this file is
+    resolved against pypi.org/project/cedit/, not against the repository. A
+    relative target renders fine on GitHub and 404s on the page most new users
+    see first — so relative links are a packaging bug, not a style choice.
+    """
+    readme = (ROOT / "README.md").read_text("utf-8")
+
+    relative = [
+        target
+        for target in _MD_LINK.findall(readme)
+        if not target.startswith(("https://", "http://", "#"))
+    ]
+
+    assert not relative, (
+        "README.md is the PyPI long description; these targets are relative "
+        f"and will 404 on pypi.org: {relative}"
+    )
