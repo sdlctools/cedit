@@ -1,9 +1,14 @@
 # Runs the pytest suite across every Python version the package's metadata
-# claims to support — `requires-python = ">=3.12"` plus the 3.12/3.13/3.14
+# claims to support — `requires-python = ">=3.10"` plus the 3.10 … 3.14
 # classifiers in pyproject.toml. Before this workflow existed the suite had
 # only ever run on a maintainer's local interpreter, so that claim was
 # unverified: a consumer could install a package pip considers compatible and
 # hit an error at import.
+#
+# 3.10 is the floor on purpose. It is the system interpreter on Ubuntu 22.04,
+# 3.11 is Debian 12's, and cedit is a developer tool that gets installed on
+# whatever Python a machine already has. Supporting them costs two matrix
+# legs; dropping them would cost those users every future release.
 #
 # The two lists are one list. Adding a classifier without adding the matching
 # matrix leg re-creates exactly the gap this workflow closed, and raising
@@ -66,11 +71,11 @@ jobs:
     # legs leave this false and gate normally.
     continue-on-error: ${{ matrix.advisory || false }}
     strategy:
-      # One leg failing must not cancel the others: "broken on 3.12, fine on
+      # One leg failing must not cancel the others: "broken on 3.10, fine on
       # 3.14" is exactly the answer this matrix exists to give.
       fail-fast: false
       matrix:
-        python-version: ["3.12", "3.13", "3.14"]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
         include:
           # Not yet released; allow-prereleases below is what lets
           # setup-python resolve it at all.

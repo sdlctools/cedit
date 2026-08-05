@@ -36,10 +36,10 @@ pipx install cedit   # or: pip install cedit
 cedit --help
 ```
 
-**Python 3.12 or newer** — every version cedit claims is a version CI runs
-the suite on, which is the whole point of the claim. On an older interpreter
-pip resolves back to the newest release that still supports it rather than
-failing.
+**Python 3.10 or newer** — every version cedit claims is a version CI runs
+the suite on, which is the whole point of the claim. 3.10 and 3.11 are the
+Ubuntu 22.04 and Debian 12 system interpreters, and cedit is a developer tool
+that lands on whatever Python a machine already has.
 
 That installs the `cedit` command **and** the importable package with the
 pinned parsing stack as real dependencies. The docs write `cedit
@@ -133,7 +133,7 @@ in [USERGUIDE.md](https://github.com/sdlctools/cedit/blob/main/USERGUIDE.md).
 | `cedit/mdcore/` | **vendored, frozen**: pinned parser + tree_diff from markdown-localization |
 | `tests/` | merge matrix + end-to-end CLI lifecycle + packaging metadata |
 | `pyproject.toml` | packaging metadata: the exact runtime pins, the `cedit` console script, explicit package discovery |
-| `.github/workflows/tests.yml` | the suite on 3.12 – 3.14, installed from `requirements.txt` |
+| `.github/workflows/tests.yml` | the suite on 3.10 – 3.14, installed from `requirements.txt` |
 
 ## Status
 

@@ -7,12 +7,13 @@ name = "cedit"
 version = "0.1.3"
 description = "Continuous editing of vendored Markdown via 3-way structural merge"
 readme = "README.md"
-# Every version named here is exercised by .github/workflows/tests.yml, and
-# that is the rule: the floor moves only together with the matrix, never
-# ahead of it. Claiming a version nothing runs is how a consumer ends up
+# 3.10 is the oldest supported version, and every version from here up is
+# exercised by .github/workflows/tests.yml. That is the rule: the floor and
+# the matrix move together, in either direction, never one without the
+# other. Claiming a version nothing runs is how a consumer ends up
 # installing a package pip considers compatible and hitting an error at
-# import.
-requires-python = ">=3.12"
+# import; testing a version the metadata does not offer is wasted CI.
+requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Valentin Kantor", email = "kantorvv@gmail.com" }]
@@ -24,6 +25,8 @@ classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
