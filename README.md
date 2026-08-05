@@ -24,21 +24,43 @@ cedit grew out of the `markdown-localization` research repo, whose pinned
 parser and Merkle-hash diff engine are vendored — frozen — in
 [`cedit/mdcore/`](cedit/mdcore/).
 
-## Setup
+## Install
+
+```bash
+pipx install cedit   # or: pip install cedit
+cedit --help
+```
+
+That installs the `cedit` command **and** the importable package with the
+pinned parsing stack as real dependencies. `cedit <subcommand>` and
+`python3 -m cedit <subcommand>` are the same entry point and behave
+identically — the docs write the longer form throughout, and the short one
+works everywhere they do.
+
+**Install cedit into an environment of its own** — that's what `pipx` above
+buys you; a dedicated virtualenv does the same. `mdcore/utils.make_parser`
+appends *every installed* mdformat parser extension, so the set of mdformat
+plugins present in the environment is part of the parser identity. Dropping
+cedit into a shared environment that already carries other mdformat plugins
+can move the hashes in your `.cedit/` state even though cedit's own pins are
+honoured — and moved hashes read as conflicts against blocks nobody touched.
+
+### Working on cedit itself
+
+Developing *cedit* rather than using it? Work from a source checkout:
 
 ```bash
 python3 -m venv venv
 venv/bin/pip install -r requirements.txt   # the parsing stack is pinned EXACTLY — see the file
-venv/bin/pip install -e .                  # so `python3 -m cedit` works from any directory (no `cedit` executable is installed)
-venv/bin/python3 -m pytest                 # 24 tests, no network
+venv/bin/pip install -e .                  # optional: only to run cedit from another repo
+venv/bin/python3 -m pytest                 # 27 tests, no network
 ```
 
 ## Quickstart
 
-Activate the venv (`source venv/bin/activate`), then run from the root of
-the repository holding your vendored copies — a *different* repo than this
-one, which is what the editable install above is for. State lives in
-`.cedit/` (commit it — the base snapshots *are* the merge's memory).
+Run from the root of the repository holding your vendored copies — a
+*different* repo than this one. State lives in `.cedit/` (commit it — the
+base snapshots *are* the merge's memory).
 
 ```bash
 # 1. start tracking (vendors the file if it doesn't exist yet)
@@ -99,4 +121,5 @@ in [USERGUIDE.md](USERGUIDE.md).
 | `cedit/state.py` | `.cedit/` — base snapshots, manifest (+ conflicts), overlay |
 | `cedit/store.py` | atomic writes: temp file + `rename(2)`, so a crash never leaves half-written state |
 | `cedit/mdcore/` | **vendored, frozen**: pinned parser + tree_diff from markdown-localization |
-| `tests/` | merge matrix + end-to-end CLI lifecycle |
+| `tests/` | merge matrix + end-to-end CLI lifecycle + packaging metadata |
+| `pyproject.toml` | packaging metadata: the exact runtime pins, the `cedit` console script, explicit package discovery |

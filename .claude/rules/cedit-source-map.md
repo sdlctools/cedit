@@ -626,8 +626,17 @@ plus the edge cases that shaped the code (`test_local_insertion_is_structural_dr
 (`test_resolve_take_local_rekeys_the_edit`, `test_orphan_resolution`),
 `test_dry_run_writes_nothing` and the two clean-error paths.
 
+`tests/test_packaging.py` covers the two packaging facts that rot silently:
+`cedit.__version__` resolving from distribution metadata with a
+`0.0.0+source` fallback for an uninstalled checkout
+(`test_version_falls_back_in_an_uninstalled_checkout` reloads the module
+with `importlib.metadata.version` patched to raise), and
+`test_pyproject_pins_match_requirements_txt`, which fails if pyproject's
+`dependencies` and `requirements.txt` drift apart — invariant 2 has to hold
+for `pip install cedit` consumers too, not just source checkouts.
+
 ```bash
-venv/bin/python3 -m pytest                                   # 24 tests, no network, <1s
+venv/bin/python3 -m pytest                                   # 27 tests, no network, <1s
 venv/bin/python3 -m pytest tests/test_merge3.py -k reapply   # one test / one file
 venv/bin/python3 -m cedit --help                             # the CLI
 ```
