@@ -1,8 +1,8 @@
 """Aligning two block sequences — the pairing `tree_diff.plan` cannot give us.
 
-`plan()` answers the localization question ("which units need the LLM") and
-deliberately does not pair opaque blocks (a changed fence is just COPY) nor
-distinguish duplicate occurrences (same source ⇒ same translation). The
+`plan()` answers a different question ("which units need re-translating")
+and deliberately does not pair opaque blocks (a changed fence is just COPY)
+nor distinguish duplicate occurrences (same source ⇒ same translation). The
 merge needs both, so this module aligns the *flat block sequences* directly,
 with the same machinery `tree_diff` uses per sibling level: LCS over Merkle
 hashes, greedy best-first similarity pairing inside each replace window, a

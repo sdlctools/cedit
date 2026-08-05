@@ -20,11 +20,11 @@ release) — read it before touching `.github/workflows/` or cutting a
 release, and
 [.claude/rules/manual-release.md](.claude/rules/manual-release.md) is the
 by-hand runbook for the releases that automation cannot finish (any release
-that changes a workflow file). [.claude/rules/revendoring.md](.claude/rules/revendoring.md)
-is the runbook for invariant 1 below: taking a new revision of the vendored
-`cedit/mdcore/` from upstream without silently moving every hash in every
-consumer's state. This file is the orientation and the rules — it does not
-restate any of them.
+that changes a workflow file). [.claude/rules/hash-stability.md](.claude/rules/hash-stability.md)
+is the runbook for invariants 1 and 2 below: changing the parser, the diff
+engine or the pins without silently moving every hash in every consumer's
+state, and the drift check that proves you did not. This file is the
+orientation and the rules — it does not restate any of them.
 
 ## What this is
 
@@ -42,7 +42,7 @@ precise, per-block conflict when upstream touched the same block you did.
 python3 -m venv venv
 venv/bin/pip install -r requirements.txt   # the parsing stack is pinned EXACTLY — see below
 venv/bin/pip install -e .                  # only needed to run cedit from another repo, not for tests
-venv/bin/python3 -m pytest                 # 29 tests, no network, <1s
+venv/bin/python3 -m pytest                 # 31 tests, no network, <1s
 venv/bin/python3 -m pytest tests/test_merge3.py -k reapply   # one test / one file
 venv/bin/python3 -m cedit --help           # the CLI
 ```
@@ -81,9 +81,9 @@ before touching either.
 | `cedit/blocks.py` | block extraction (inline units + opaque blocks), splicing, render-and-verify |
 | `cedit/state.py` | `.cedit/` — base snapshots, manifest (+ conflicts), derived overlay |
 | `cedit/store.py` | atomic writes: temp file in the target dir + `rename(2)` |
-| `cedit/mdcore/` | **vendored, frozen** from markdown-localization: `utils` (pinned parser), `tree_diff` (hashing, segmentation, similarity) |
+| `cedit/mdcore/` | **frozen**: `utils` (the pinned parser), `tree_diff` (hashing, segmentation, similarity) — every recorded hash is a function of these |
 | `cedit/__main__.py` | `python3 -m cedit` entry — delegates to `cli.main` |
-| `tests/` | `test_merge3.py` (the merge matrix), `test_cli.py` (end-to-end lifecycle), `test_packaging.py` (version resolution, pin drift, README link absoluteness) |
+| `tests/` | `test_merge3.py` (the merge matrix), `test_cli.py` (end-to-end lifecycle), `test_packaging.py` (version resolution, pin drift, README link absoluteness), `test_parser_contract.py` (the drift check — invariant 2, enforced) |
 
 A `sync` flows in one direction: **parse** B (base), L (local working copy)
 and U (incoming upstream) into block sequences → **align** L against B (the
@@ -95,22 +95,25 @@ first, then `.cedit/` state.
 
 ## Invariants — do not violate these
 
-1. **`cedit/mdcore/` is vendored and frozen.** It is a copy of the
-   markdown-localization repo's parser and diff engine. Do not refactor,
-   reformat or "improve" it: a change to hashing or segmentation moves every
-   hash already recorded in consumers' `.cedit/` state. Changes belong
-   upstream and arrive here as a re-vendoring — a procedure with its own
-   runbook, [.claude/rules/revendoring.md](.claude/rules/revendoring.md);
-   read it before touching anything under `cedit/mdcore/` or bumping a
-   parsing pin. See also *Reuse rules* in SPEC.md.
+1. **`cedit/mdcore/` is frozen.** It holds the parser (`utils`) and the
+   hashing/segmentation engine (`tree_diff`), and every hash in every
+   consumer's `.cedit/` state is a function of them. Do not refactor,
+   reformat or "improve" it: a change to canonicalisation, hashing or
+   segmentation moves hashes recorded on machines you will never see, and
+   turns their next sync into a wall of false conflicts against blocks
+   nobody touched. Deliberate changes are possible — they go through
+   [.claude/rules/hash-stability.md](.claude/rules/hash-stability.md). See
+   also *Reuse rules* in SPEC.md.
 
 2. **The parsing stack in `requirements.txt` is pinned exactly on purpose.**
    Every hash in `.cedit/` state — base doc hashes, overlay keys, conflict
    keys — is taken over the one parser configuration in
-   `mdcore/utils.make_parser`, which *is* those packages. A minor upgrade can
-   change what the parser emits, silently moving every hash and turning the
-   next sync into a wall of false conflicts. Upgrade one pin at a time and
-   run the suite.
+   `mdcore/utils.make_parser`, which *is* those packages, **plus whatever
+   mdformat plugins are installed** — `make_parser` appends every one it
+   finds, so an unrelated `pip install` can move every hash. A minor upgrade
+   can change what the parser emits just as silently. Upgrade one pin at a
+   time and run `venv/bin/python3 tests/parser_contract.py`; the rest of the
+   suite cannot see a consistent hash move.
 
 3. **Conflict handling is explicit, never a silent clobber.** On conflict the
    working file keeps the **local** text and all three versions (base,

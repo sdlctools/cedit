@@ -18,12 +18,11 @@ patches), and "downstream fork maintenance" generally. The honest one-line
 description is: *a persistent block-level overlay, re-applied by 3-way
 structural merge*. Working name: **cedit** (continuous editing).
 
-This is a research POC in its own repository, grown out of the
-`markdown-localization` research repo — whose parser configuration, hashing
-and diff engine it vendors (see *Reuse rules* below), and whose spec
-(`tree-diff-spec.md`) is binding background for the vendored code.
+This is a research POC. Its parser configuration, hashing and diff engine
+live frozen in `cedit/mdcore/` (see *Reuse rules* below), because every hash
+cedit records is a function of them.
 
-## The model — three revisions, two plans, one merge
+## The model — three revisions, two alignments, one merge
 
 Every tracked document has three revisions:
 
@@ -45,9 +44,10 @@ upstream_changes = align(blocks(B), blocks(U))   # what upstream changed
 `tree_diff`'s pieces — LCS over Merkle hashes, greedy similarity pairing in
 each replace window, a global same-hash move pass, a global fuzzy pass for
 moved-and-edited blocks, the same thresholds. It exists because
-`tree_diff.plan()` answers the localization question and deliberately does
-not pair opaque blocks (a changed fence is just COPY) nor distinguish
-duplicate occurrences — both of which the merge needs. One rule is new and
+`tree_diff.plan()` answers a different question — which units need
+re-translating — and deliberately does not pair opaque blocks (a changed
+fence is just COPY) nor distinguish duplicate occurrences — both of which
+the merge needs. One rule is new and
 editing-specific: a 1-for-1 replacement of a like-typed block inside one
 replace window is an **edit** regardless of text similarity (`a` →
 `a-adapted` in a table cell scores 0.18; for translation a mis-split just
@@ -57,16 +57,16 @@ The merge is decided **per block of B**, keyed by hash — the same
 16-hex-char Merkle hashes `tree_diff.hash_tree` produces, over the same
 pinned parser (`mdcore/utils.make_parser`). Because the key is a content hash,
 an upstream *move* of a unit the user edited costs nothing: the edit
-re-applies at the unit's new position, exactly as a TM entry survives a
-moved paragraph. Reflow and formatting churn cost nothing either —
-canonicalization is inherited from the l10n stack and is just as
-load-bearing here.
+re-applies at the unit's new position. Reflow and formatting churn cost
+nothing either — canonicalization runs before every hash, and is exactly as
+load-bearing as the hashing itself.
 
 ## Edit units = translation units **plus opaque blocks**
 
-The critical difference from l10n: the motivating edit is a **code fence**,
-and in `tree_diff` fences, raw HTML and front matter are *opaque* — they
-never become translation units, they only get `COPY`. For cedit the
+`tree_diff` segments a document into *translation units* — the prose-bearing
+blocks. The critical difference for editing: the motivating edit is a **code
+fence**, and in `tree_diff` fences, raw HTML and front matter are *opaque* —
+they never become translation units, they only get `COPY`. For cedit the
 editable set is therefore the union:
 
 - **inline units** (heading / paragraph / th / td) — keyed by unit hash;
@@ -112,12 +112,12 @@ Units the user *inserted or deleted* locally (structure changes, not
 replacements) are phase 2 — see *Phases*. Phase 1 rejects them at
 `snapshot`/`sync` time with a clear message rather than mis-merging: the
 merged document's structure always comes from **U** — the splice is the
-only mutation — which is what makes the vendored machinery reusable here.
+only mutation — which is what makes the frozen machinery reusable here.
 
 ## Why an AST overlay, not git patches
 
 The user-visible question — "generate the diff in AST mode or git's?" —
-is decided for AST, for reasons the l10n work already paid for:
+is decided for AST, for reasons that predate cedit:
 
 1. **Line diffs die on canonicalization.** A reflow from 80 to 72 columns
    invalidates every hunk context; hash-keyed units call it a no-op.
@@ -158,7 +158,7 @@ document merges normally.
 | Path | Contents | Committed? |
 | --- | --- | --- |
 | tracked docs (e.g. `skills/**.md`) | **L** — the user's working copies | yes (they're the product) |
-| `.cedit/base/<mirrored path>` | **B** — canonicalized base snapshots | **yes** — the merge is impossible without B; a git blob ref (the manifest trick from l10n) doesn't work here because B comes from a *different* repo |
+| `.cedit/base/<mirrored path>` | **B** — canonicalized base snapshots | **yes** — the merge is impossible without B, and a git blob ref doesn't work here because B comes from a *different* repo |
 | `.cedit/manifest.json` | per-doc: upstream source id, base doc hash, last sync, unresolved conflicts (with the three texts) | **yes** |
 | `.cedit/overlay.json` | the derived local-edit overlay: `(hash, occurrence) → {base_text, local_text}` per doc | **yes** — but *derived*: L is the single source of truth, the overlay is recomputed from `align(B, L)` at every `snapshot`, `sync` and `resolve`. Committed anyway because "what have we customized" is exactly what a reviewer wants to see in a PR diff, like a lockfile |
 | sync reports | per-run outcome counts + conflict details | no — run artifact |
@@ -186,8 +186,7 @@ silently stops applying does not exist.
    (including new conflicts), regenerate the overlay by aligning the new
    base against the new working copy.
 8. Print the report: `reapplied / updated / conflicts / orphans` counts and
-   each conflict's location (heading trail — the same context the l10n
-   queue carries).
+   each conflict's location (the heading trail).
 
 Ordering rule: the working file is written **before** base/manifest. A
 crash between the two leaves an already-merged L against the old B — the
@@ -213,15 +212,15 @@ sync again until they are resolved.
 
 ## Reuse rules — what must not fork
 
-cedit lives in its own repository, so "reuse" is realized as **vendoring**:
-`cedit/mdcore/` holds copies of the upstream repo's `app/utils.py` (the
-pinned parser) and `app/tree_diff.py` (hashing, segmentation, similarity),
-and `requirements.txt` carries the same exact pins. Taking a new revision of
-those copies is a **re-vendoring**, and it has a procedure of its own:
-[.claude/rules/revendoring.md](.claude/rules/revendoring.md) — what may
-differ from upstream, how to tell a hash-moving change from a hash-neutral
-one, how to verify, and what consumers do when hashes moved. The invariants
-still hold:
+`cedit/mdcore/` holds the two modules every recorded hash is a function of —
+`utils.py` (the pinned parser) and `tree_diff.py` (hashing, segmentation,
+similarity) — and `requirements.txt` pins the stack they are assembled from.
+They are frozen: not because they are sacred, but because a consumer's
+`.cedit/` state is keyed to them, and a change nobody classified re-keys it
+silently. Deliberate changes go through
+[.claude/rules/hash-stability.md](.claude/rules/hash-stability.md) — how to
+tell a hash-moving change from a hash-neutral one, the drift check that
+decides it, and what consumers do when hashes moved. The invariants:
 
 - **Parser**: `mdcore/utils.make_parser`, pinned stack, canonical
   round-trip. cedit adds no parser options. Every hash in `.cedit/` state
@@ -230,7 +229,7 @@ still hold:
 - **Hashing/segmentation**: `mdcore.tree_diff`'s `hash_tree`, `is_unit` and
   `OPAQUE`, `_unit_source`, `ratio` and the thresholds — never re-derived,
   only consumed (`cedit/blocks.py`, `cedit/align.py`).
-- **Splice/verify**: cedit's own, in `cedit/blocks.py` — not vendored, and
+- **Splice/verify**: cedit's own, in `cedit/blocks.py` — outside the frozen core, and
   it must not drift from the hashing it splices around. Structure comes
   from the tree being spliced into; the only mutations are an `inline`
   token's children/content and an opaque token's `content` + `info`;
@@ -254,8 +253,7 @@ still hold:
    hash of the preceding base unit (fallback: following unit, then heading
    trail); anchor retired upstream ⇒ ORPHAN. Local deletions recorded as
    `(hash, occurrence) → delete` overlay entries.
-3. **Assisted rebase (optional):** the analog of the localization pipeline's
-   `REVISE` — on CONFLICT, an LLM ports the local adaptation onto the new
+3. **Assisted rebase (optional):** the analog of `tree_diff.plan`'s `REVISE` — on CONFLICT, an LLM ports the local adaptation onto the new
    upstream text ("re-apply *zsh* to the new command"), entering the overlay
    only as `review_status: machine` pending `resolve`. Same gate philosophy
    as the placeholder gate: assist, never silently decide.

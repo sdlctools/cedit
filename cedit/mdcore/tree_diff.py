@@ -1,14 +1,13 @@
 """
 Merkle-hashed AST diff over Markdown — locating *what changed*.
 
-VENDORED from the markdown-localization research repo (`app/tree_diff.py`),
-where it is the change-detection engine of the continuous-localization
-pipeline. cedit reuses it unchanged for segmentation (`_units_under`,
-`_unit_source`, `_opaque_under`), hashing (`hash_tree` — every hash in
-`.cedit/` state is one of these) and similarity (`ratio`, the thresholds).
-Do not let this copy drift: a change here moves every recorded hash. The
-design rationale is `SPEC.md` plus the upstream repo's
-`.claude/rules/tree-diff-spec.md`.
+The change-detection engine. cedit uses it for segmentation (`is_unit`,
+`OPAQUE`, `_unit_source`), hashing (`hash_tree` — every hash in `.cedit/`
+state is one of these) and similarity (`ratio`, the thresholds); the
+translation-planning surface below (`plan`, `diff_trees`, `tm_keys` and
+friends) is not called by cedit. FROZEN: a change here moves every recorded
+hash. The design rationale is `SPEC.md`; the procedure for changing it
+anyway is `.claude/rules/hash-stability.md`.
 
 Why Merkle hashing: hash(node) = H(type, tag, own_text, hash(c1)…hash(cn)).
 Two subtrees are identical iff their hashes match, so a diff never has to
