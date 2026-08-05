@@ -1,0 +1,318 @@
+{
+  "pins": {
+    "markdown-it-py": "4.2.0",
+    "mdit-py-plugins": "0.6.1",
+    "mdformat": "1.0.0",
+    "mdformat-gfm": "1.0.0",
+    "mdformat-frontmatter": "2.1.2",
+    "linkify-it-py": "2.1.0"
+  },
+  "plugins": [
+    "frontmatter",
+    "gfm",
+    "tables"
+  ],
+  "options": {
+    "alerts": false,
+    "breaks": false,
+    "highlight": null,
+    "html": true,
+    "langPrefix": "language-",
+    "linkify": false,
+    "maxNesting": 20,
+    "parser_extension": "<list>",
+    "quotes": "“”‘’",
+    "strikethrough_single_tilde": true,
+    "tasklists": false,
+    "tasklists_editable": false,
+    "typographer": false,
+    "xhtmlOut": true
+  },
+  "fixture": {
+    "source_sha256": "dc82445e12d5861d8e33cb60424d55e1e6a703dfd668234b5ec0c64bae660fc1",
+    "canonical_sha256": "ba6a988176f995d78b5780f76e26dbcaca69ae44aea00b30100188b985b0907f",
+    "doc_hash": "e67942a9762fccef",
+    "blocks": [
+      {
+        "key": "c488372d0d1411e8:0",
+        "kind": "opaque",
+        "node_type": "front_matter",
+        "info": "",
+        "context": ""
+      },
+      {
+        "key": "87a00520f7f488c4:0",
+        "kind": "unit",
+        "node_type": "heading",
+        "info": "",
+        "context": ""
+      },
+      {
+        "key": "00c9e49ade52bf93:0",
+        "kind": "unit",
+        "node_type": "paragraph",
+        "info": "",
+        "context": "Kitchen sink"
+      },
+      {
+        "key": "2c0920b7c7206836:0",
+        "kind": "unit",
+        "node_type": "paragraph",
+        "info": "",
+        "context": "Kitchen sink"
+      },
+      {
+        "key": "a974d0c303e9b166:0",
+        "kind": "unit",
+        "node_type": "paragraph",
+        "info": "",
+        "context": "Kitchen sink"
+      },
+      {
+        "key": "2c62a2f499adf9bc:0",
+        "kind": "unit",
+        "node_type": "paragraph",
+        "info": "",
+        "context": "Kitchen sink"
+      },
+      {
+        "key": "91ba45ba297b86b3:0",
+        "kind": "unit",
+        "node_type": "heading",
+        "info": "",
+        "context": "Kitchen sink"
+      },
+      {
+        "key": "4111dcea9a478e22:0",
+        "kind": "opaque",
+        "node_type": "fence",
+        "info": "bash",
+        "context": "Fences"
+      },
+      {
+        "key": "ac0753fa59971ccc:0",
+        "kind": "opaque",
+        "node_type": "fence",
+        "info": "",
+        "context": "Fences"
+      },
+      {
+        "key": "9883826b8391dd0c:0",
+        "kind": "opaque",
+        "node_type": "fence",
+        "info": "python",
+        "context": "Fences"
+      },
+      {
+        "key": "62e1c0c48e89c930:0",
+        "kind": "opaque",
+        "node_type": "fence",
+        "info": "",
+        "context": "Fences"
+      },
+      {
+        "key": "2751b0de5262bff6:0",
+        "kind": "unit",
+        "node_type": "heading",
+        "info": "",
+        "context": "Fences"
+      },
+      {
+        "key": "417f2bbc4939a9e7:0",
+        "kind": "opaque",
+        "node_type": "html_block",
+        "info": "",
+        "context": "Raw HTML"
+      },
+      {
+        "key": "779015f4035e620e:0",
+        "kind": "unit",
+        "node_type": "paragraph",
+        "info": "",
+        "context": "Raw HTML"
+      },
+      {
+        "key": "e34311436daf9f6b:0",
+        "kind": "unit",
+        "node_type": "heading",
+        "info": "",
+        "context": "Raw HTML"
+      },
+      {
+        "key": "fe49184b65d41183:0",
+        "kind": "unit",
+        "node_type": "th",
+        "info": "",
+        "context": "Tables"
+      },
+      {
+        "key": "99f8fc93497f2457:0",
+        "kind": "unit",
+        "node_type": "th",
+        "info": "",
+        "context": "Tables"
+      },
+      {
+        "key": "c7444675576b70a6:0",
+        "kind": "unit",
+        "node_type": "th",
+        "info": "",
+        "context": "Tables"
+      },
+      {
+        "key": "b94b920694506653:0",
+        "kind": "unit",
+        "node_type": "td",
+        "info": "",
+        "context": "Tables"
+      },
+      {
+        "key": "4dbbe52d2e4a180e:0",
+        "kind": "unit",
+        "node_type": "td",
+        "info": "",
+        "context": "Tables"
+      },
+      {
+        "key": "fc7a9e8ac41fe95e:0",
+        "kind": "unit",
+        "node_type": "td",
+        "info": "",
+        "context": "Tables"
+      },
+      {
+        "key": "d6b389ef2874ff61:0",
+        "kind": "unit",
+        "node_type": "td",
+        "info": "",
+        "context": "Tables"
+      },
+      {
+        "key": "52fee32096cc449c:0",
+        "kind": "unit",
+        "node_type": "td",
+        "info": "",
+        "context": "Tables"
+      },
+      {
+        "key": "aea006b77f11a32b:0",
+        "kind": "unit",
+        "node_type": "td",
+        "info": "",
+        "context": "Tables"
+      },
+      {
+        "key": "4dceee30deefb949:0",
+        "kind": "unit",
+        "node_type": "heading",
+        "info": "",
+        "context": "Tables"
+      },
+      {
+        "key": "70180305fd13a9a1:0",
+        "kind": "unit",
+        "node_type": "paragraph",
+        "info": "",
+        "context": "Lists"
+      },
+      {
+        "key": "fa738490820da7a0:0",
+        "kind": "unit",
+        "node_type": "paragraph",
+        "info": "",
+        "context": "Lists"
+      },
+      {
+        "key": "936ccf8f61bb6637:0",
+        "kind": "unit",
+        "node_type": "paragraph",
+        "info": "",
+        "context": "Lists"
+      },
+      {
+        "key": "f9d6de74796c521c:0",
+        "kind": "unit",
+        "node_type": "paragraph",
+        "info": "",
+        "context": "Lists"
+      },
+      {
+        "key": "02faf54499e60b7d:0",
+        "kind": "unit",
+        "node_type": "paragraph",
+        "info": "",
+        "context": "Lists"
+      },
+      {
+        "key": "afc4afe956361da7:0",
+        "kind": "unit",
+        "node_type": "paragraph",
+        "info": "",
+        "context": "Lists"
+      },
+      {
+        "key": "d4303e8afff08c85:0",
+        "kind": "unit",
+        "node_type": "paragraph",
+        "info": "",
+        "context": "Lists"
+      },
+      {
+        "key": "a6f19d7a8be23185:0",
+        "kind": "unit",
+        "node_type": "paragraph",
+        "info": "",
+        "context": "Lists"
+      },
+      {
+        "key": "962933a06b676bff:0",
+        "kind": "unit",
+        "node_type": "paragraph",
+        "info": "",
+        "context": "Lists"
+      },
+      {
+        "key": "ce259e86d3ea6c5f:0",
+        "kind": "unit",
+        "node_type": "heading",
+        "info": "",
+        "context": "Lists"
+      },
+      {
+        "key": "cd4d8373413e75f9:0",
+        "kind": "unit",
+        "node_type": "paragraph",
+        "info": "",
+        "context": "Blockquotes and alerts"
+      },
+      {
+        "key": "11ebda5e78880f69:0",
+        "kind": "unit",
+        "node_type": "paragraph",
+        "info": "",
+        "context": "Blockquotes and alerts"
+      },
+      {
+        "key": "5e3d94cbb83b14bb:0",
+        "kind": "unit",
+        "node_type": "heading",
+        "info": "",
+        "context": "Blockquotes and alerts"
+      },
+      {
+        "key": "05d24bbff1b3e053:0",
+        "kind": "opaque",
+        "node_type": "hr",
+        "info": "",
+        "context": "Breaks"
+      },
+      {
+        "key": "35a4dd01d10e5f51:0",
+        "kind": "unit",
+        "node_type": "paragraph",
+        "info": "",
+        "context": "Breaks"
+      }
+    ]
+  }
+}
