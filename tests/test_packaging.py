@@ -13,7 +13,16 @@ import importlib
 import importlib.metadata
 import pathlib
 import re
-import tomllib  # stdlib since 3.11, and requires-python is >=3.12
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # 3.10 — tomllib is stdlib only from 3.11
+    # requirements.txt installs tomli there. The earlier
+    # `pytest.importorskip("tomllib")` was worse than it looked: the two
+    # tests below are the guards against metadata drift, and on the oldest
+    # supported leg — the one most likely to actually drift — they skipped
+    # silently while still reporting green.
+    import tomli as tomllib
 
 import cedit
 

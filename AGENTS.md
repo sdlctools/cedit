@@ -130,8 +130,8 @@ the jira-sdlc skills, not by hand**; each carries a
 subjects lead with the Jira key (`CED-7 Add ...`).
 
 `.github/workflows/` holds gitflow release automation, Jira transition on
-merge, the AI PR reviewer, and `tests.yml` — the suite on Python 3.12, 3.13
-and 3.14, installed from `requirements.txt`, on every push to
+merge, the AI PR reviewer, and `tests.yml` — the suite on Python 3.10, 3.11,
+3.12, 3.13 and 3.14, installed from `requirements.txt`, on every push to
 `development`/`main` and every pull request, plus an advisory 3.15 leg that
 reports but cannot fail the job.
 

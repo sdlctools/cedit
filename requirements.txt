@@ -14,5 +14,9 @@ mdformat-gfm==1.0.0
 mdformat-frontmatter==2.1.2
 linkify-it-py==2.1.0
 
-# tests
+# tests — deliberately unpinned, and deliberately not runtime dependencies of
+# the published package. tests/test_packaging.py reads pyproject.toml, and
+# tomllib is stdlib only from 3.11, so 3.10 needs the backport to run the
+# metadata guards rather than skip them.
 pytest
+tomli; python_version < "3.11"

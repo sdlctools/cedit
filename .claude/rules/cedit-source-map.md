@@ -653,5 +653,5 @@ venv/bin/python3 -m cedit --help                             # the CLI
 
 Use `venv/bin/python3`, never a bare `python3` — the interpreter needs the
 pinned parsing stack. `.github/workflows/tests.yml` runs the same suite on
-3.12 – 3.14, but it gates nothing (see AGENTS.md) — this local run is still
+3.10 – 3.14, but it gates nothing (see AGENTS.md) — this local run is still
 the gate.
