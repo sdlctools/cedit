@@ -5,9 +5,11 @@ Read this before touching the codebase. It is the single entrypoint for
 this file in, so add project instructions here and nowhere else.
 
 Depth lives elsewhere: [README.md](README.md) is the user-facing usage
-(setup, quickstart, exit codes, layout), [SPEC.md](SPEC.md) is the normative
-design (merge matrix, sync algorithm, state format, reuse rules, phases).
-This file is the orientation and the rules — it does not restate either.
+(setup, quickstart, exit codes, layout), [USERGUIDE.md](USERGUIDE.md) is the
+task-oriented how-to (command reference, flows, conflict lifecycle,
+troubleshooting), [SPEC.md](SPEC.md) is the normative design (merge matrix,
+sync algorithm, state format, reuse rules, phases). This file is the
+orientation and the rules — it does not restate any of them.
 
 ## What this is
 
