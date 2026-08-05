@@ -32,10 +32,10 @@ cedit --help
 ```
 
 That installs the `cedit` command **and** the importable package with the
-pinned parsing stack as real dependencies. `cedit <subcommand>` and
-`python3 -m cedit <subcommand>` are the same entry point and behave
-identically — the docs write the longer form throughout, and the short one
-works everywhere they do.
+pinned parsing stack as real dependencies. The docs write `cedit
+<subcommand>` throughout; `python3 -m cedit <subcommand>` is the same entry
+point with the same arguments, and is what you want when cedit lives in a
+virtualenv you'd rather not activate.
 
 **Install cedit into an environment of its own** — that's what `pipx` above
 buys you; a dedicated virtualenv does the same. `mdcore/utils.make_parser`
@@ -64,10 +64,10 @@ base snapshots *are* the merge's memory).
 
 ```bash
 # 1. start tracking (vendors the file if it doesn't exist yet)
-python3 -m cedit snapshot skills/SKILL.md --from vendor/skills/SKILL.md
+cedit snapshot skills/SKILL.md --from vendor/skills/SKILL.md
 
 # 2. adapt the file in place — e.g. rewrite bash fences for zsh — then:
-python3 -m cedit diff
+cedit diff
 # [edit opaque fence] #c564262de9cbba0f:0  sim=0.98
 #     ctx  : 1. Discovery and healthcheck
 #     base : bash "${CLAUDE_PLUGIN_ROOT}/.../ensure_local_env.sh" || exit 1
@@ -75,7 +75,7 @@ python3 -m cedit diff
 
 # 3. upstream evolved — merge it in (your edits re-apply, even across moves
 #    and reflows; upstream changes to blocks you didn't touch flow in)
-python3 -m cedit sync --from vendor
+cedit sync --from vendor
 # skills/SKILL.md: 1 edit(s) reapplied, 1 block(s) updated from upstream, 1 conflict(s)
 # [CONFLICT opaque fence] #c564262de9cbba0f:0
 #     base    : bash ".../ensure_local_env.sh" || exit 1
@@ -83,11 +83,11 @@ python3 -m cedit sync --from vendor
 #     local   : zsh ".../ensure_local_env.sh" || exit 1  (kept in the working file)
 
 # 4. a conflict means upstream changed the very block you adapted — decide:
-python3 -m cedit resolve skills/SKILL.md c564262de9cbba0f --show           # all three versions
-python3 -m cedit resolve skills/SKILL.md c564262de9cbba0f --take local    # keep the adaptation
-python3 -m cedit resolve skills/SKILL.md c564262de9cbba0f --take upstream # take upstream's text
+cedit resolve skills/SKILL.md c564262de9cbba0f --show           # all three versions
+cedit resolve skills/SKILL.md c564262de9cbba0f --take local    # keep the adaptation
+cedit resolve skills/SKILL.md c564262de9cbba0f --take upstream # take upstream's text
 
-python3 -m cedit status
+cedit status
 # skills/SKILL.md: 2 local edit(s), 0 unresolved conflict(s); base 92b023942934d656 ...
 ```
 

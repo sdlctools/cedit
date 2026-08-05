@@ -53,10 +53,10 @@ install.
 
 Use `venv/bin/python3`, not a bare `python3` — the interpreter needs the
 pinned parsing stack, so a bare `python3 -m cedit` fails on
-`ModuleNotFoundError`. README.md's quickstart writes plain `python3 -m cedit`
-because it assumes cedit is installed in whatever interpreter is on PATH;
-that is the same interpreter by another name. Tests do not need the editable
-install — the root `conftest.py` covers them.
+`ModuleNotFoundError`. README.md and USERGUIDE.md write plain `cedit`
+because they address someone who installed the published package; here that
+same entry point is `venv/bin/cedit` or `venv/bin/python3 -m cedit`. Tests
+do not need the editable install — the root `conftest.py` covers them.
 
 Packaging and publishing live in `pyproject.toml` (metadata, the exact
 runtime pins, explicit `cedit` + `cedit.mdcore` discovery) and in

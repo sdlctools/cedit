@@ -194,12 +194,12 @@ the reverse order would record a sync that never happened.
 ## CLI (POC surface — implemented in `cedit/cli.py`)
 
 ```bash
-python3 -m cedit snapshot <path> --from <upstream-file>   # start tracking; vendors the file if absent
-python3 -m cedit diff [<path>...] [--unified]             # the overlay (human view; --unified for git-style)
-python3 -m cedit sync [<path>...] [--from <dir-or-file>] [-n]   # the 3-way merge; --from defaults to
-                                                                # each doc's recorded upstream
-python3 -m cedit status [<path>...]                       # per-doc edits, conflicts, base freshness
-python3 -m cedit resolve <path> <hash[:occ]> --take local|upstream | --show
+cedit snapshot <path> --from <upstream-file>   # start tracking; vendors the file if absent
+cedit diff [<path>...] [--unified]             # the overlay (human view; --unified for git-style)
+cedit sync [<path>...] [--from <dir-or-file>] [-n]   # the 3-way merge; --from defaults to
+                                                     # each doc's recorded upstream
+cedit status [<path>...]                       # per-doc edits, conflicts, base freshness
+cedit resolve <path> <hash[:occ]> --take local|upstream | --show
 ```
 
 One entry point, same subcommand set for a human and a future CI job — the
