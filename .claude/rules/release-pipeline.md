@@ -62,8 +62,10 @@ human marks the draft PR ready and merges it into main
                         tag vX.Y.Z on the merge commit
                         gh release create (notes from the previous plain tag)
                         bump pyproject on main, push
+                        build sdist+wheel from the BUMPED tree, verify, twine check
                         back-merge main -> development (PR on conflict)
                         delete release/sprint-X.Y.Z
+                        upload dist/ to PyPI (Trusted Publishing, OIDC)
 ```
 
 A `hotfix/*` PR merged into `main` enters the same `release.yml` at the
@@ -152,6 +154,34 @@ write with a permission error.
 `cut-release.yml`'s draft PR step fails. Same setting covers
 `release.yml`'s conflict-path sync PR.
 
+### 6. The PyPI build must run *after* the version bump, never on the tagged tree
+
+`release.yml` tags the merge commit **before** it bumps `pyproject.toml`,
+and `cut-release.yml` never stamps `pyproject.toml` at all — only
+`tag-development-rc.yml` and `release.yml` do. So at the commit that gets
+tagged `vX.Y.Z`, `pyproject.toml` still carries whatever `development` last
+stamped: a dev version like `0.1.2-dev.5`.
+
+Build from that tree and you upload `0.1.2.dev5`, which PyPI sorts *below*
+`0.1.2` rather than above it — and **PyPI filenames are immutable**, so the
+mistake cannot be corrected by re-uploading or re-running. The version is
+burned.
+
+Hence the build step sits immediately after *Bump pyproject.toml*, which is
+the only point in the job where the working tree holds the release version,
+and it asserts that `dist/` contains exactly `cedit-<X.Y.Z>-py3-none-any.whl`
+and `cedit-<X.Y.Z>.tar.gz` before anything is uploaded. Any step that moves
+the build earlier, or points it at `merge_commit_sha`, reintroduces this.
+
+The **upload** is deliberately the last step of the job, after the
+back-merge and the branch delete. Its realistic failure is the OIDC
+exchange, which a human fixes on pypi.org; running it last means that
+failure leaves everything else already done. Trusted Publishing also needs
+`id-token: write` in the workflow's `permissions:` block (invariant 4) and a
+**pending publisher** configured on pypi.org for this repository *and this
+workflow filename* — rename `release.yml` and the OIDC exchange stops
+matching.
+
 ## Failure modes and what they mean
 
 | Symptom | Cause | Fix |
@@ -163,6 +193,8 @@ write with a permission error.
 | `Release` fails: *Tag … already exists* | the same version was released, or a tag was pushed by hand | do not overwrite; re-cut at the next version |
 | Back-merge opened a PR instead of pushing | `main` and `development` diverged | resolve the sync PR by hand — never force-push `development` |
 | No `vX.Y.Z-dev.1` after a release | invariant 2, not a bug | it appears on the next push to `development` |
+| `Release` fails at *Publish to PyPI*, everything else done | no pending publisher on pypi.org for this repo + workflow, or the OIDC exchange was refused | configure the Trusted Publisher, then upload `dist/` by hand from a checkout of `main` (which carries the bumped version) — do **not** re-run the job, the tag step would fail |
+| `Release` fails at *Build sdist + wheel and verify* | the built version does not match the tag — the build ran against a tree that was not bumped (invariant 6) | fix the step order; nothing was uploaded, so the version is not burned |
 
 ### Recovering a release that never fired
 
@@ -172,8 +204,8 @@ The pipeline is idempotent enough to just re-run once the branch is sane:
    blocks the next cut.
 2. Re-run **Cut release** with the same bump. The version is derived from
    the latest plain tag, so a missed release does not skip a number.
-3. Merge the new draft PR. `release.yml` tags, publishes, bumps,
-   back-merges and cleans up.
+3. Merge the new draft PR. `release.yml` tags, publishes the GitHub
+   Release, bumps, builds, back-merges, cleans up and uploads to PyPI.
 
 `main` having already received the content is fine: the cut commit
 guarantees a non-empty diff, and the tag lands on the new merge commit.

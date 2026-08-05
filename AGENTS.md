@@ -35,10 +35,16 @@ precise, per-block conflict when upstream touched the same block you did.
 python3 -m venv venv
 venv/bin/pip install -r requirements.txt   # the parsing stack is pinned EXACTLY — see below
 venv/bin/pip install -e .                  # only needed to run cedit from another repo, not for tests
-venv/bin/python3 -m pytest                 # 24 tests, no network, <1s
+venv/bin/python3 -m pytest                 # 27 tests, no network, <1s
 venv/bin/python3 -m pytest tests/test_merge3.py -k reapply   # one test / one file
 venv/bin/python3 -m cedit --help           # the CLI
 ```
+
+That is the flow for working **on** cedit. *Consumers* install the published
+package instead — `pipx install cedit`, which also puts a `cedit` console
+script on PATH (`[project.scripts]` in `pyproject.toml`); README.md leads
+with that. The editable install above now installs the same console script,
+so `venv/bin/cedit` works too.
 
 `conftest.py` at the repo root exists so that pytest puts the repository
 root on `sys.path` and the `cedit` package imports **without installation** —
@@ -47,10 +53,16 @@ install.
 
 Use `venv/bin/python3`, not a bare `python3` — the interpreter needs the
 pinned parsing stack, so a bare `python3 -m cedit` fails on
-`ModuleNotFoundError`. README.md's quickstart writes plain `python3 -m cedit`
-because it assumes an activated venv (`source venv/bin/activate`) and the
-editable install; that is the same interpreter by another name. Tests do not
-need the editable install — the root `conftest.py` covers them.
+`ModuleNotFoundError`. README.md and USERGUIDE.md write plain `cedit`
+because they address someone who installed the published package; here that
+same entry point is `venv/bin/cedit` or `venv/bin/python3 -m cedit`. Tests
+do not need the editable install — the root `conftest.py` covers them.
+
+Packaging and publishing live in `pyproject.toml` (metadata, the exact
+runtime pins, explicit `cedit` + `cedit.mdcore` discovery) and in
+`release.yml`'s build/verify/publish steps — see
+[.claude/rules/release-pipeline.md](.claude/rules/release-pipeline.md)
+before touching either.
 
 ## Architecture
 
@@ -64,7 +76,7 @@ need the editable install — the root `conftest.py` covers them.
 | `cedit/store.py` | atomic writes: temp file in the target dir + `rename(2)` |
 | `cedit/mdcore/` | **vendored, frozen** from markdown-localization: `utils` (pinned parser), `tree_diff` (hashing, segmentation, similarity) |
 | `cedit/__main__.py` | `python3 -m cedit` entry — delegates to `cli.main` |
-| `tests/` | `test_merge3.py` (the merge matrix), `test_cli.py` (end-to-end lifecycle) |
+| `tests/` | `test_merge3.py` (the merge matrix), `test_cli.py` (end-to-end lifecycle), `test_packaging.py` (version resolution + pin drift) |
 
 A `sync` flows in one direction: **parse** B (base), L (local working copy)
 and U (incoming upstream) into block sequences → **align** L against B (the
