@@ -9,10 +9,11 @@ Depth lives elsewhere: [README.md](README.md) is the user-facing usage
 task-oriented how-to (command reference, flows, conflict lifecycle,
 troubleshooting), [SPEC.md](SPEC.md) is the normative design (merge matrix,
 sync algorithm, state format, reuse rules, phases), and
-[.claude/rules/cedit-source-map.md](.claude/rules/cedit-source-map.md) is the
-code-level map of the implementation (every module's functions, dataclasses
-and constants, the call graph, where each invariant below is enforced) —
-read it before changing code.
+[ARCHITECTURE.md](ARCHITECTURE.md) is the code-level map of the
+implementation (every module's functions, dataclasses and constants, the
+call graph, where each invariant below is enforced, and the change recipes
+plus hash blast radius for extending it) — **read it before changing
+code.**
 [.claude/rules/release-pipeline.md](.claude/rules/release-pipeline.md) does
 the same for the three versioning workflows (dev builds, release cut,
 release) — read it before touching `.github/workflows/` or cutting a
