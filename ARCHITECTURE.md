@@ -533,7 +533,11 @@ is a verbatim copy of the markdown-localization repo's parser and diff
 engine. A change to hashing or segmentation moves every hash already recorded
 in consumers' `.cedit/` state, turning their next `sync` into a wall of false
 conflicts against blocks nobody touched. Fixes belong upstream and arrive here
-as a re-vendoring. See *Reuse rules* in SPEC.md and invariant 1 in AGENTS.md.
+as a re-vendoring, and that has a runbook of its own:
+[.claude/rules/revendoring.md](.claude/rules/revendoring.md) — what may
+differ from upstream, which pins move with it, how to tell a hash-moving
+change from a hash-neutral one, how to verify, and what consumers do when
+hashes moved. See also *Reuse rules* in SPEC.md and invariant 1 in AGENTS.md.
 
 That includes the parts cedit does not use. The package is vendored whole, on
 purpose, so re-vendoring is a copy rather than a merge — do not "tidy up" the

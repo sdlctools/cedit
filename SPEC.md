@@ -89,17 +89,24 @@ edit degrades to a conflict rather than guessing.
 
 ## The merge matrix
 
-For each base unit, cross what upstream did (`plan(B, U)`) with whether the
-user edited it (`plan(B, L)` produced a change for its hash):
+For each base unit, cross what `align(B, U)` says upstream did with whether
+`align(B, L)` says the user edited it. Both sides speak the same three
+verdicts — `SAME`, `EDITED`, `DELETED`, each carrying whether the unit also
+*moved*:
 
-| upstream says | locally edited? | outcome |
+| `align(B, U)` says | locally edited? | outcome |
 | --- | --- | --- |
-| `REUSE` (unchanged) | no | — (identical everywhere) |
-| `REUSE` / `RECHECK` (moved verbatim) | **yes** | **REAPPLY** — splice the local text at the unit's (possibly new) position |
-| `REVISE` / opaque changed | no | **UPDATE** — take upstream |
-| `REVISE` / opaque changed | **yes** | **CONFLICT** — three texts recorded, see below |
-| `RETIRE` (deleted upstream) | **yes** | **ORPHAN** — a conflict flavor: the unit your edit lived on no longer exists |
-| new unit (upstream insert) | — | take upstream |
+| `SAME` | no | — (identical everywhere) |
+| `SAME`, moved or not | **yes** | **REAPPLY** — splice the local text at the unit's (possibly new) position |
+| `EDITED` | no | **UPDATE** — take upstream |
+| `EDITED` | **yes** | **CONFLICT** — three texts recorded, see below |
+| `DELETED` (retired upstream) | no | take upstream's deletion |
+| `DELETED` (retired upstream) | **yes** | **ORPHAN** — a conflict flavor: the unit your edit lived on no longer exists |
+| a unit of U with no base counterpart (upstream insert) | — | take upstream |
+
+A move is never a decision input, only a report line: the merge is keyed by
+content hash, so an upstream move of an edited unit re-applies at its new
+position for free.
 
 Units the user *inserted or deleted* locally (structure changes, not
 replacements) are phase 2 — see *Phases*. Phase 1 rejects them at
@@ -153,7 +160,7 @@ document merges normally.
 | tracked docs (e.g. `skills/**.md`) | **L** — the user's working copies | yes (they're the product) |
 | `.cedit/base/<mirrored path>` | **B** — canonicalized base snapshots | **yes** — the merge is impossible without B; a git blob ref (the manifest trick from l10n) doesn't work here because B comes from a *different* repo |
 | `.cedit/manifest.json` | per-doc: upstream source id, base doc hash, last sync, unresolved conflicts (with the three texts) | **yes** |
-| `.cedit/overlay.json` | the derived local-edit overlay: `(hash, occurrence) → {base_text, local_text}` per doc | **yes** — but *derived*: L is the single source of truth, the overlay is recomputed from `plan(B, L)` at every `sync`/`status --write`. Committed anyway because "what have we customized" is exactly what a reviewer wants to see in a PR diff, like a lockfile |
+| `.cedit/overlay.json` | the derived local-edit overlay: `(hash, occurrence) → {base_text, local_text}` per doc | **yes** — but *derived*: L is the single source of truth, the overlay is recomputed from `align(B, L)` at every `snapshot`, `sync` and `resolve`. Committed anyway because "what have we customized" is exactly what a reviewer wants to see in a PR diff, like a lockfile |
 | sync reports | per-run outcome counts + conflict details | no — run artifact |
 
 Deriving the overlay instead of maintaining it as source of truth is the
@@ -184,7 +191,7 @@ silently stops applying does not exist.
 
 Ordering rule: the working file is written **before** base/manifest. A
 crash between the two leaves an already-merged L against the old B — the
-next sync's `plan(B, L)` just sees the merged result as local edits
+next sync's `align(B, L)` just sees the merged result as local edits
 against the old base and converges; the reverse order would record a sync
 that never happened.
 
@@ -209,17 +216,20 @@ sync again until they are resolved.
 cedit lives in its own repository, so "reuse" is realized as **vendoring**:
 `cedit/mdcore/` holds copies of the upstream repo's `app/utils.py` (the
 pinned parser) and `app/tree_diff.py` (hashing, segmentation, similarity),
-and `requirements.txt` carries the same exact pins. The invariants still
-hold:
+and `requirements.txt` carries the same exact pins. Taking a new revision of
+those copies is a **re-vendoring**, and it has a procedure of its own:
+[.claude/rules/revendoring.md](.claude/rules/revendoring.md) — what may
+differ from upstream, how to tell a hash-moving change from a hash-neutral
+one, how to verify, and what consumers do when hashes moved. The invariants
+still hold:
 
 - **Parser**: `mdcore/utils.make_parser`, pinned stack, canonical
   round-trip. cedit adds no parser options. Every hash in `.cedit/` state
   is taken over it — moving a pin without re-validating moves every hash
   and turns the next sync into a wall of false conflicts.
-- **Hashing/segmentation**: `mdcore.tree_diff`'s `hash_tree`,
-  `_units_under`, `_unit_source`, `_opaque_under`, `ratio` and the
-  thresholds — never re-derived, only consumed (`cedit/blocks.py`,
-  `cedit/align.py`).
+- **Hashing/segmentation**: `mdcore.tree_diff`'s `hash_tree`, `is_unit` and
+  `OPAQUE`, `_unit_source`, `ratio` and the thresholds — never re-derived,
+  only consumed (`cedit/blocks.py`, `cedit/align.py`).
 - **Splice/verify**: cedit's own, in `cedit/blocks.py` — not vendored, and
   it must not drift from the hashing it splices around. Structure comes
   from the tree being spliced into; the only mutations are an `inline`
@@ -244,11 +254,11 @@ hold:
    hash of the preceding base unit (fallback: following unit, then heading
    trail); anchor retired upstream ⇒ ORPHAN. Local deletions recorded as
    `(hash, occurrence) → delete` overlay entries.
-3. **Assisted rebase (optional):** the REVISE analog — on CONFLICT, an LLM
-   ports the local adaptation onto the new upstream text ("re-apply *zsh*
-   to the new command"), entering the overlay only as `review_status:
-   machine` pending `resolve`. Same gate philosophy as the placeholder
-   gate: assist, never silently decide.
+3. **Assisted rebase (optional):** the analog of the localization pipeline's
+   `REVISE` — on CONFLICT, an LLM ports the local adaptation onto the new
+   upstream text ("re-apply *zsh* to the new command"), entering the overlay
+   only as `review_status: machine` pending `resolve`. Same gate philosophy
+   as the placeholder gate: assist, never silently decide.
 
 ## Non-goals
 

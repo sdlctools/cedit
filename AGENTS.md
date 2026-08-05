@@ -20,8 +20,11 @@ release) — read it before touching `.github/workflows/` or cutting a
 release, and
 [.claude/rules/manual-release.md](.claude/rules/manual-release.md) is the
 by-hand runbook for the releases that automation cannot finish (any release
-that changes a workflow file). This file is the orientation and the rules —
-it does not restate any of them.
+that changes a workflow file). [.claude/rules/revendoring.md](.claude/rules/revendoring.md)
+is the runbook for invariant 1 below: taking a new revision of the vendored
+`cedit/mdcore/` from upstream without silently moving every hash in every
+consumer's state. This file is the orientation and the rules — it does not
+restate any of them.
 
 ## What this is
 
@@ -96,7 +99,10 @@ first, then `.cedit/` state.
    markdown-localization repo's parser and diff engine. Do not refactor,
    reformat or "improve" it: a change to hashing or segmentation moves every
    hash already recorded in consumers' `.cedit/` state. Changes belong
-   upstream and arrive here as a re-vendoring. See *Reuse rules* in SPEC.md.
+   upstream and arrive here as a re-vendoring — a procedure with its own
+   runbook, [.claude/rules/revendoring.md](.claude/rules/revendoring.md);
+   read it before touching anything under `cedit/mdcore/` or bumping a
+   parsing pin. See also *Reuse rules* in SPEC.md.
 
 2. **The parsing stack in `requirements.txt` is pinned exactly on purpose.**
    Every hash in `.cedit/` state — base doc hashes, overlay keys, conflict
