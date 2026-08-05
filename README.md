@@ -16,8 +16,9 @@ the same thing you did.
 | [SPEC.md](SPEC.md) | **The design** — the merge matrix, the normative sync algorithm, the state format, the reuse rules, and what is phase 1 vs. phase 2 vs. never |
 | [AGENTS.md](AGENTS.md) | **Changing cedit itself** — build and test commands, the architecture in one table, and the five invariants a change must not violate. `CLAUDE.md` exists only to pull this in, so every AI assistant reads the same file |
 | [.claude/rules/cedit-source-map.md](.claude/rules/cedit-source-map.md) | **The code, module by module** — every function, dataclass field and constant, the end-to-end call graph from `cli.main` down to the splice, and where each invariant is actually enforced |
+| [.claude/rules/release-pipeline.md](.claude/rules/release-pipeline.md) | **How this repo ships** — the two tag shapes, the dev-build / cut / release flow end to end, who owns the version at each step, the five workflow invariants, and a failure-mode table |
 
-Using cedit? You want USERGUIDE.md. The last two are for working *on* it.
+Using cedit? You want USERGUIDE.md. The last three are for working *on* it.
 
 cedit grew out of the `markdown-localization` research repo, whose pinned
 parser and Merkle-hash diff engine are vendored — frozen — in
