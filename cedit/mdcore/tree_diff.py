@@ -74,7 +74,7 @@ def own_text(node: SyntaxTreeNode) -> str:
 
 
 def hash_tree(node: SyntaxTreeNode) -> str:
-    """Annotate every node with `.h` (Merkle hash) and `.size` (#descendants).
+    """Annotate every node with `.h`, its Merkle hash.
 
     Deliberately excluded from the hash:
       * `map` (line numbers)  — shift on every insert above
@@ -87,7 +87,6 @@ def hash_tree(node: SyntaxTreeNode) -> str:
         payload = f"{node.type}|{attr(node, 'tag')}|{norm(_unit_source(node))}"
         h = hashlib.sha256(payload.encode()).hexdigest()[:16]
         node.h = h
-        node.size = 1
         for c in node.children:
             hash_tree(c)
         return h
@@ -95,12 +94,9 @@ def hash_tree(node: SyntaxTreeNode) -> str:
     parts = [node.type, attr(node, "tag"), attr(node, "info")]
     if not node.children:
         parts.append(norm(own_text(node)))
-    size = 1
     for child in node.children:
         parts.append(hash_tree(child))
-        size += child.size
     node.h = hashlib.sha256("|".join(parts).encode()).hexdigest()[:16]
-    node.size = size
     return node.h
 
 
