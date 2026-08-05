@@ -16,14 +16,12 @@ quilt-style *patch queues* (Debian, kernel), `git rerere` (reuse recorded
 conflict resolutions), ports/overlay patching (Gentoo, Homebrew formula
 patches), and "downstream fork maintenance" generally. The honest one-line
 description is: *a persistent block-level overlay, re-applied by 3-way
-structural merge*. Working name: **cedit** (continuous editing), sibling of
-`cl10n/`.
+structural merge*. Working name: **cedit** (continuous editing).
 
 This is a research POC in its own repository, grown out of the
 `markdown-localization` research repo — whose parser configuration, hashing
-and diff engine it vendors (see *Reuse rules* below), and whose specs
-(`tree-diff-spec.md`, the cl10n specs) are binding background for the
-vendored code.
+and diff engine it vendors (see *Reuse rules* below), and whose spec
+(`tree-diff-spec.md`) is binding background for the vendored code.
 
 ## The model — three revisions, two plans, one merge
 
@@ -106,9 +104,8 @@ user edited it (`plan(B, L)` produced a change for its hash):
 Units the user *inserted or deleted* locally (structure changes, not
 replacements) are phase 2 — see *Phases*. Phase 1 rejects them at
 `snapshot`/`sync` time with a clear message rather than mis-merging: the
-merged document's structure always comes from **U**, which is exactly the
-invariant `cl10n/reassemble.py` already enforces ("the splice is the only
-mutation"), and is what makes its machinery reusable here.
+merged document's structure always comes from **U** — the splice is the
+only mutation — which is what makes the vendored machinery reusable here.
 
 ## Why an AST overlay, not git patches
 
@@ -177,7 +174,7 @@ silently stops applying does not exist.
    texts by hash — reusing the reassemble invariants: splice is the only
    mutation, re-parse the rendered output and refuse to write if block
    structure moved.
-6. Write atomically (temp file + rename, same rule as cl10n).
+6. Write atomically (temp file + rename).
 7. Update `.cedit/base/<path>` to canonicalized U, rewrite manifest
    (including new conflicts), regenerate the overlay by aligning the new
    base against the new working copy.
@@ -185,11 +182,11 @@ silently stops applying does not exist.
    each conflict's location (heading trail — the same context the l10n
    queue carries).
 
-Ordering rule (the write-ordering discipline from cl10n): the working file
-is written **before** base/manifest. A crash between the two leaves an
-already-merged L against the old B — the next sync's `plan(B, L)` just sees
-the merged result as local edits against the old base and converges;
-the reverse order would record a sync that never happened.
+Ordering rule: the working file is written **before** base/manifest. A
+crash between the two leaves an already-merged L against the old B — the
+next sync's `plan(B, L)` just sees the merged result as local edits
+against the old base and converges; the reverse order would record a sync
+that never happened.
 
 ## CLI (POC surface — implemented in `cedit/cli.py`)
 
@@ -202,10 +199,10 @@ cedit status [<path>...]                       # per-doc edits, conflicts, base 
 cedit resolve <path> <hash[:occ]> --take local|upstream | --show
 ```
 
-One entry point, same subcommand set for a human and a future CI job — the
-`cl10n/cli.py` pattern. Exit codes: 0 clean, 1 unresolved conflicts exist
-(a sync that recorded them, a status that sees them), 2 errors. A doc with
-open conflicts refuses to sync again until they are resolved.
+One entry point, same subcommand set for a human and a future CI job. Exit
+codes: 0 clean, 1 unresolved conflicts exist (a sync that recorded them, a
+status that sees them), 2 errors. A doc with open conflicts refuses to
+sync again until they are resolved.
 
 ## Reuse rules — what must not fork
 
@@ -223,15 +220,14 @@ hold:
   `_units_under`, `_unit_source`, `_opaque_under`, `ratio` and the
   thresholds — never re-derived, only consumed (`cedit/blocks.py`,
   `cedit/align.py`).
-- **Splice/verify**: `cl10n/reassemble.py`'s invariants, carried into
-  `cedit/blocks.py` — structure comes from the tree being spliced into;
-  the only mutations are an `inline` token's children/content and an
-  opaque token's `content` + `info`; replacements re-parse through
-  `parse_inline`; whitespace collapses in table cells; the task-list
-  checkbox token is carried across; every render re-parses its own output
-  and refuses on a moved block structure.
-- **Atomic writes**: `cl10n/l10n_store.py`'s temp-file-plus-rename
-  discipline, in `cedit/store.py`.
+- **Splice/verify**, carried into `cedit/blocks.py`: structure comes from
+  the tree being spliced into; the only mutations are an `inline` token's
+  children/content and an opaque token's `content` + `info`; replacements
+  re-parse through `parse_inline`; whitespace collapses in table cells;
+  the task-list checkbox token is carried across; every render re-parses
+  its own output and refuses on a moved block structure.
+- **Atomic writes**: temp-file-plus-rename discipline, in
+  `cedit/store.py`.
 
 ## Phases
 
