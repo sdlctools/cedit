@@ -1,5 +1,10 @@
 # cedit — continuous editing of vendored Markdown
 
+[![PyPI](https://img.shields.io/pypi/v/cedit)](https://pypi.org/project/cedit/)
+[![Python versions](https://img.shields.io/pypi/pyversions/cedit)](https://pypi.org/project/cedit/)
+[![Tests](https://github.com/sdlctools/cedit/actions/workflows/tests.yml/badge.svg)](https://github.com/sdlctools/cedit/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/pypi/l/cedit)](https://github.com/sdlctools/cedit/blob/main/LICENSE)
+
 Keep **local adaptations** of vendored Markdown alive across **upstream
 updates**: a persistent block-level overlay, re-applied by 3-way structural
 merge on the document's AST. Vendored a skill whose commands assume `bash`
@@ -12,17 +17,17 @@ the same thing you did.
 
 | Document | What's in it |
 | --- | --- |
-| [USERGUIDE.md](USERGUIDE.md) | **How to drive it** — a five-minute tour, a per-flag reference for all five subcommands, the conflict lifecycle worked end to end, the `.cedit/` layout, a cookbook and a troubleshooting table |
-| [SPEC.md](SPEC.md) | **The design** — the merge matrix, the normative sync algorithm, the state format, the reuse rules, and what is phase 1 vs. phase 2 vs. never |
-| [AGENTS.md](AGENTS.md) | **Changing cedit itself** — build and test commands, the architecture in one table, and the five invariants a change must not violate. `CLAUDE.md` exists only to pull this in, so every AI assistant reads the same file |
-| [.claude/rules/cedit-source-map.md](.claude/rules/cedit-source-map.md) | **The code, module by module** — every function, dataclass field and constant, the end-to-end call graph from `cli.main` down to the splice, and where each invariant is actually enforced |
-| [.claude/rules/release-pipeline.md](.claude/rules/release-pipeline.md) | **How this repo ships** — the two tag shapes, the dev-build / cut / release flow end to end, who owns the version at each step, the five workflow invariants, and a failure-mode table |
+| [USERGUIDE.md](https://github.com/sdlctools/cedit/blob/main/USERGUIDE.md) | **How to drive it** — a five-minute tour, a per-flag reference for all five subcommands, the conflict lifecycle worked end to end, the `.cedit/` layout, a cookbook and a troubleshooting table |
+| [SPEC.md](https://github.com/sdlctools/cedit/blob/main/SPEC.md) | **The design** — the merge matrix, the normative sync algorithm, the state format, the reuse rules, and what is phase 1 vs. phase 2 vs. never |
+| [AGENTS.md](https://github.com/sdlctools/cedit/blob/main/AGENTS.md) | **Changing cedit itself** — build and test commands, the architecture in one table, and the five invariants a change must not violate. `CLAUDE.md` exists only to pull this in, so every AI assistant reads the same file |
+| [.claude/rules/cedit-source-map.md](https://github.com/sdlctools/cedit/blob/main/.claude/rules/cedit-source-map.md) | **The code, module by module** — every function, dataclass field and constant, the end-to-end call graph from `cli.main` down to the splice, and where each invariant is actually enforced |
+| [.claude/rules/release-pipeline.md](https://github.com/sdlctools/cedit/blob/main/.claude/rules/release-pipeline.md) | **How this repo ships** — the two tag shapes, the dev-build / cut / release flow end to end, who owns the version at each step, the five workflow invariants, and a failure-mode table |
 
 Using cedit? You want USERGUIDE.md. The last three are for working *on* it.
 
 cedit grew out of the `markdown-localization` research repo, whose pinned
 parser and Merkle-hash diff engine are vendored — frozen — in
-[`cedit/mdcore/`](cedit/mdcore/).
+[`cedit/mdcore/`](https://github.com/sdlctools/cedit/tree/main/cedit/mdcore/).
 
 ## Install
 
@@ -30,6 +35,11 @@ parser and Merkle-hash diff engine are vendored — frozen — in
 pipx install cedit   # or: pip install cedit
 cedit --help
 ```
+
+**Python 3.12 or newer** — every version cedit claims is a version CI runs
+the suite on, which is the whole point of the claim. On an older interpreter
+pip resolves back to the newest release that still supports it rather than
+failing.
 
 That installs the `cedit` command **and** the importable package with the
 pinned parsing stack as real dependencies. The docs write `cedit
@@ -53,7 +63,7 @@ Developing *cedit* rather than using it? Work from a source checkout:
 python3 -m venv venv
 venv/bin/pip install -r requirements.txt   # the parsing stack is pinned EXACTLY — see the file
 venv/bin/pip install -e .                  # optional: only to run cedit from another repo
-venv/bin/python3 -m pytest                 # 27 tests, no network
+venv/bin/python3 -m pytest                 # 29 tests, no network
 ```
 
 ## Quickstart
@@ -98,7 +108,7 @@ explicit, never a silent clobber.
 
 Everything above in depth — every flag, every output line, the conflict
 lifecycle end to end, the `.cedit/` layout and a troubleshooting table — is
-in [USERGUIDE.md](USERGUIDE.md).
+in [USERGUIDE.md](https://github.com/sdlctools/cedit/blob/main/USERGUIDE.md).
 
 ## What it will not do (yet)
 
@@ -123,3 +133,21 @@ in [USERGUIDE.md](USERGUIDE.md).
 | `cedit/mdcore/` | **vendored, frozen**: pinned parser + tree_diff from markdown-localization |
 | `tests/` | merge matrix + end-to-end CLI lifecycle + packaging metadata |
 | `pyproject.toml` | packaging metadata: the exact runtime pins, the `cedit` console script, explicit package discovery |
+| `.github/workflows/tests.yml` | the suite on 3.12 – 3.14, installed from `requirements.txt` |
+
+## Status
+
+**Alpha** (`Development Status :: 3 - Alpha`). The merge is phase 1: it
+re-applies *replacements* — prose, fences, table cells, front matter — and
+**rejects local structural changes** (inserting, deleting or moving whole
+blocks) with a per-block report rather than guessing. Structural local edits
+are phase 2 in
+[SPEC.md](https://github.com/sdlctools/cedit/blob/main/SPEC.md). The CLI
+surface, the exit codes and the `.cedit/` state format are what phase 2 will
+build on, but nothing here is promised stable before 1.0 — pin the version if
+that matters to you.
+
+## License
+
+MIT — see
+[LICENSE](https://github.com/sdlctools/cedit/blob/main/LICENSE).

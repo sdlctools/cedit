@@ -116,6 +116,16 @@ Corollaries:
 - If `[skip ci]` is ever removed from `tag-development-rc.yml`, the cut
   commit may go too — but not before, and the two comments cross-reference
   each other for that reason.
+- **`tests.yml` must not become a required status check** while the marker
+  is in play. It is not one of the three versioning workflows and touches
+  nothing here, but it is subject to the same suppression: a required check
+  on a PR that emits no runs never *fails*, it never *reports*, which
+  branch protection treats as pending forever — an unmergeable PR with no
+  failed run to point at. The exposure is narrow (feature branches carry
+  their own commits, and the cut commit clears the marker for release
+  branches), but "narrow" and "safe" are not the same thing. The workflow's
+  own header comment says this too, so whoever flips the setting reads it
+  from either end.
 
 ### 2. Pushes made by `GITHUB_TOKEN` do not trigger workflows
 

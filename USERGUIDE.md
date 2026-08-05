@@ -98,7 +98,7 @@ Working on cedit itself rather than using it? Install from a clone instead:
 python3 -m venv venv
 venv/bin/pip install -r requirements.txt   # the parsing stack, pinned EXACTLY
 venv/bin/pip install -e .                  # puts `cedit` on the venv's path
-venv/bin/python3 -m pytest                 # 27 tests, no network, <1s
+venv/bin/python3 -m pytest                 # 29 tests, no network, <1s
 ```
 
 **The pins are load-bearing.** `requirements.txt` pins `markdown-it-py`,

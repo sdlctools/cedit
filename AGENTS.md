@@ -35,7 +35,7 @@ precise, per-block conflict when upstream touched the same block you did.
 python3 -m venv venv
 venv/bin/pip install -r requirements.txt   # the parsing stack is pinned EXACTLY — see below
 venv/bin/pip install -e .                  # only needed to run cedit from another repo, not for tests
-venv/bin/python3 -m pytest                 # 27 tests, no network, <1s
+venv/bin/python3 -m pytest                 # 29 tests, no network, <1s
 venv/bin/python3 -m pytest tests/test_merge3.py -k reapply   # one test / one file
 venv/bin/python3 -m cedit --help           # the CLI
 ```
@@ -76,7 +76,7 @@ before touching either.
 | `cedit/store.py` | atomic writes: temp file in the target dir + `rename(2)` |
 | `cedit/mdcore/` | **vendored, frozen** from markdown-localization: `utils` (pinned parser), `tree_diff` (hashing, segmentation, similarity) |
 | `cedit/__main__.py` | `python3 -m cedit` entry — delegates to `cli.main` |
-| `tests/` | `test_merge3.py` (the merge matrix), `test_cli.py` (end-to-end lifecycle), `test_packaging.py` (version resolution + pin drift) |
+| `tests/` | `test_merge3.py` (the merge matrix), `test_cli.py` (end-to-end lifecycle), `test_packaging.py` (version resolution, pin drift, README link absoluteness) |
 
 A `sync` flows in one direction: **parse** B (base), L (local working copy)
 and U (incoming upstream) into block sequences → **align** L against B (the
@@ -130,5 +130,24 @@ the jira-sdlc skills, not by hand**; each carries a
 subjects lead with the Jira key (`CED-7 Add ...`).
 
 `.github/workflows/` holds gitflow release automation, Jira transition on
-merge, and the AI PR reviewer. **There is no CI test job** — the local
-`venv/bin/python3 -m pytest` run is the gate. Run it before every commit.
+merge, the AI PR reviewer, and `tests.yml` — the suite on Python 3.12, 3.13
+and 3.14, installed from `requirements.txt`, on every push to
+`development`/`main` and every pull request, plus an advisory 3.15 leg that
+reports but cannot fail the job.
+
+**The matrix, the classifiers and `requires-python` are one list.** Claiming a
+version no leg runs is the defect `tests.yml` was added to close, so change
+all three in the same commit —
+`tests/test_packaging.py::test_supported_pythons_are_the_tested_pythons`
+fails if they drift. Advisory legs are excluded from that check by design:
+they are not claimed support.
+
+**`tests.yml` gates nothing.** It is not a required status check, on purpose:
+a PR whose head commit carries `[skip ci]` emits *no* workflow runs at all
+(invariant 1 in
+[.claude/rules/release-pipeline.md](.claude/rules/release-pipeline.md)), so a
+required check would never report and the PR would be permanently
+unmergeable. Nor does it cover what a maintainer's machine does — it runs on
+Linux only. **The local `venv/bin/python3 -m pytest` run is still the gate.
+Run it before every commit;** CI's job is the version matrix you cannot run
+locally.
