@@ -145,7 +145,7 @@ jobs:
         # Full history + every remote ref: the linked worktree is built from a
         # fetched origin/<head>, and we stand on the PR's base branch, both of
         # which a shallow single-branch clone doesn't have.
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
