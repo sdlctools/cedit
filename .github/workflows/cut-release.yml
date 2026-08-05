@@ -36,7 +36,7 @@ jobs:
     name: Cut release/sprint-<version> from development
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: development
           fetch-depth: 0
