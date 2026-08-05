@@ -1,13 +1,29 @@
-"""Aligning two block sequences — the pairing `tree_diff.plan` cannot give us.
+"""Aligning two block sequences — which block became which.
 
-`plan()` answers a different question ("which units need re-translating")
-and deliberately does not pair opaque blocks (a changed fence is just COPY)
-nor distinguish duplicate occurrences (same source ⇒ same translation). The
-merge needs both, so this module aligns the *flat block sequences* directly,
-with the same machinery `tree_diff` uses per sibling level: LCS over Merkle
-hashes, greedy best-first similarity pairing inside each replace window, a
-global same-hash pass for moves, and a global fuzzy pass for moved-and-edited
-blocks. Thresholds are `tree_diff`'s — one definition of "similar enough".
+The merge is decided per block of the base document, so for every base block
+it needs the one block on the other side that *is* that block: unchanged,
+edited, moved, or gone. That is a pairing problem over the flat block
+sequence `blocks.parse_doc` produces — opaque blocks (a rewritten code fence
+is the motivating local edit) paired like any other, and two byte-identical
+blocks kept distinct, because a user may have adapted only the third copy of
+a repeated command.
+
+Four passes, cheapest evidence first:
+
+1. LCS over the blocks' Merkle hashes pairs everything that did not change
+   and localises the rest into `replace` windows. Positional comparison
+   would not do: inserting one block shifts every following one, and the
+   whole tail would read as dirty.
+2. Inside a window, greedy best-first similarity pairing above
+   `SIM_THRESHOLD` — plus one positional rule, that a 1-for-1 replacement of
+   a like-typed block is an edit whatever it scores.
+3. A global same-hash pass over what is left: a deleted and an inserted
+   block with the same hash is a move, wherever it landed.
+4. A global fuzzy pass above `FUZZY_THRESHOLD` for blocks that were moved
+   *and* edited — the one case no single window can see.
+
+Hashes, the similarity scorer and both thresholds come from `tree_diff`: one
+definition of "similar enough", and the same hashes `.cedit/` state records.
 """
 
 from __future__ import annotations

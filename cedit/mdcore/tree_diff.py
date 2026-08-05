@@ -1,34 +1,28 @@
 """
-Merkle-hashed AST diff over Markdown — locating *what changed*.
+Merkle-hashed AST over Markdown — what a block *is*.
 
-The change-detection engine. cedit uses it for segmentation (`is_unit`,
-`OPAQUE`, `_unit_source`), hashing (`hash_tree` — every hash in `.cedit/`
-state is one of these) and similarity (`ratio`, the thresholds); the
-translation-planning surface below (`plan`, `diff_trees`, `tm_keys` and
-friends) is not called by cedit. FROZEN: a change here moves every recorded
-hash. The design rationale is `SPEC.md`; the procedure for changing it
-anyway is `.claude/rules/hash-stability.md`.
+The hashing and segmentation engine. cedit uses it for segmentation
+(`is_unit`, `OPAQUE`, `_unit_source`), hashing (`hash_tree` — every hash in
+`.cedit/` state is one of these), similarity (`ratio` and the two
+thresholds) and the `diff` view's clipping. FROZEN: a change here moves
+every recorded hash. The design rationale is `SPEC.md`; the procedure for
+changing it anyway is `.claude/rules/hash-stability.md`.
 
 Why Merkle hashing: hash(node) = H(type, tag, own_text, hash(c1)…hash(cn)).
-Two subtrees are identical iff their hashes match, so a diff never has to
-descend into an unchanged branch. Cost is O(n) to hash + O(k²) per *changed*
-sibling list, i.e. proportional to the size of the edit, not the document.
-
-Why LCS per level and not positional compare: inserting one paragraph shifts
-every following sibling. Positional comparison would mark the whole tail
-dirty; LCS over the children's hashes recovers the alignment exactly.
+Two subtrees are identical iff their hashes match, so a single O(n) pass
+gives every block a content identity that survives being moved and survives
+reflow. That is what lets an alignment pair blocks by equality before it
+compares any text, and what lets `.cedit/` state name a block at all. The
+pairing itself is `cedit/align.py`'s job, not this module's.
 """
 
 from __future__ import annotations
 
 import hashlib
 import re
-from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 
 from markdown_it.tree import SyntaxTreeNode
-
-from .utils import markdown_to_ast
 
 # ---------------------------------------------------------------------------
 # Node classification
@@ -42,9 +36,6 @@ UNIT_PARENTS = {"heading", "paragraph", "th", "td"}
 
 # Opaque blocks: hashed so we notice they moved/changed, never translated.
 OPAQUE = {"fence", "code_block", "html_block", "front_matter", "hr"}
-
-# Inline leaves whose text must survive translation verbatim.
-NON_TRANSLATABLE_INLINE = {"code_inline", "html_inline", "image"}
 
 _WS = re.compile(r"\s+")
 
@@ -121,23 +112,8 @@ def _unit_source(node: SyntaxTreeNode) -> str:
 
 
 # ---------------------------------------------------------------------------
-# 2. Diff — per-level LCS + local fuzzy pairing
+# 2. Similarity — is this the same block, edited?
 # ---------------------------------------------------------------------------
-
-KINDS = ("EQUAL", "UPDATE", "INSERT", "DELETE", "MOVE")
-
-
-@dataclass
-class Op:
-    kind: str
-    old: SyntaxTreeNode | None = None
-    new: SyntaxTreeNode | None = None
-    sim: float = 1.0
-
-    def __repr__(self) -> str:  # pragma: no cover - debugging aid
-        n = self.new or self.old
-        return f"<{self.kind} {n.type} sim={self.sim:.2f}>"
-
 
 # Below this, two nodes are considered unrelated rather than "one edited into
 # the other". GumTree (Falleri et al., ASE'14) uses 0.5 for structural
@@ -156,156 +132,9 @@ def ratio(a: str, b: str) -> float:
     return SequenceMatcher(None, norm(a), norm(b), autojunk=False).ratio()
 
 
-def similarity(a: SyntaxTreeNode, b: SyntaxTreeNode) -> float:
-    if a.type != b.type:
-        return 0.0
-    if is_unit(a):
-        return ratio(_unit_source(a), _unit_source(b))
-
-    # Structural: Dice coefficient over the sets of descendant hashes.
-    ah, bh = _descendant_hashes(a), _descendant_hashes(b)
-    dice = 1.0 if not ah and not bh else 2 * len(ah & bh) / (len(ah) + len(bh))
-
-    # Dice collapses to 0 for a small container (a one-paragraph list_item):
-    # editing its only sentence invalidates every descendant hash. Fall back to
-    # comparing the flattened prose, which still reads as "the same item".
-    if dice >= SIM_THRESHOLD or len(ah) > 24:
-        return dice
-    return max(dice, ratio(_flat_text(a), _flat_text(b)))
-
-
-_FLAT_CAP = 4000
-
-
-def _flat_text(node: SyntaxTreeNode) -> str:
-    if getattr(node, "_flat", None) is None:
-        node._flat = norm(" ".join(_unit_source(u) for u in _units_under(node)))[:_FLAT_CAP]
-    return node._flat
-
-
-def _descendant_hashes(node: SyntaxTreeNode) -> set[str]:
-    out: set[str] = set()
-    stack = list(node.children)
-    while stack:
-        n = stack.pop()
-        out.add(n.h)
-        stack.extend(n.children)
-    return out
-
-
-def diff_trees(old_root: SyntaxTreeNode, new_root: SyntaxTreeNode) -> list[Op]:
-    hash_tree(old_root)
-    hash_tree(new_root)
-    ops: list[Op] = []
-    _diff_children(old_root, new_root, ops)
-    return _detect_moves(ops)
-
-
-def _diff_node(a: SyntaxTreeNode, b: SyntaxTreeNode, ops: list[Op]) -> None:
-    if a.h == b.h:
-        ops.append(Op("EQUAL", a, b))
-        return
-    if is_unit(a) and is_unit(b) and a.type == b.type:
-        ops.append(Op("UPDATE", a, b, similarity(a, b)))
-        return
-    if a.type != b.type or not a.children or not b.children:
-        ops.append(Op("DELETE", a, None))
-        ops.append(Op("INSERT", None, b))
-        return
-    _diff_children(a, b, ops)
-
-
-def _diff_children(a: SyntaxTreeNode, b: SyntaxTreeNode, ops: list[Op]) -> None:
-    ah = [c.h for c in a.children]
-    bh = [c.h for c in b.children]
-    # autojunk=False: a doc with many identical short nodes (e.g. `---`) must
-    # not have them silently treated as noise.
-    sm = SequenceMatcher(None, ah, bh, autojunk=False)
-    for tag, i1, i2, j1, j2 in sm.get_opcodes():
-        if tag == "equal":
-            for k in range(i2 - i1):
-                ops.append(Op("EQUAL", a.children[i1 + k], b.children[j1 + k]))
-        elif tag == "delete":
-            ops.extend(Op("DELETE", c, None) for c in a.children[i1:i2])
-        elif tag == "insert":
-            ops.extend(Op("INSERT", None, c) for c in b.children[j1:j2])
-        else:
-            _align_window(a.children[i1:i2], b.children[j1:j2], ops)
-
-
-def _align_window(olds, news, ops: list[Op]) -> None:
-    """Pair up the nodes inside one `replace` window by best similarity.
-
-    Greedy best-first over an m×n score matrix; m and n are the size of a
-    single changed sibling run, so this stays cheap.
-    """
-    scored = sorted(
-        (
-            (similarity(o, n), i, j)
-            for i, o in enumerate(olds)
-            for j, n in enumerate(news)
-        ),
-        key=lambda t: -t[0],
-    )
-    used_o: set[int] = set()
-    used_n: set[int] = set()
-    pairs: list[tuple[int, int]] = []
-    for score, i, j in scored:
-        if score < SIM_THRESHOLD or i in used_o or j in used_n:
-            continue
-        used_o.add(i)
-        used_n.add(j)
-        pairs.append((i, j))
-
-    for i, j in sorted(pairs, key=lambda p: p[1]):
-        _diff_node(olds[i], news[j], ops)
-    ops.extend(Op("DELETE", o, None) for i, o in enumerate(olds) if i not in used_o)
-    ops.extend(Op("INSERT", None, n) for j, n in enumerate(news) if j not in used_n)
-
-
-def _detect_moves(ops: list[Op]) -> list[Op]:
-    """A DELETE and an INSERT with the same Merkle hash is a move.
-
-    Detecting moves is what makes hashing worth it: moved content keeps its
-    translation for free, where a plain edit-script differ would re-translate.
-    """
-    deletes: dict[str, list[int]] = {}
-    for idx, op in enumerate(ops):
-        if op.kind == "DELETE":
-            deletes.setdefault(op.old.h, []).append(idx)
-
-    consumed: set[int] = set()
-    for op in ops:
-        if op.kind != "INSERT":
-            continue
-        bucket = deletes.get(op.new.h)
-        while bucket:
-            idx = bucket.pop(0)
-            if idx in consumed:
-                continue
-            consumed.add(idx)
-            op.kind = "MOVE"
-            op.old = ops[idx].old
-            break
-    return [op for i, op in enumerate(ops) if i not in consumed]
-
-
 # ---------------------------------------------------------------------------
-# 3. Translation units — what actually goes to the LLM
+# 3. Heading trail, and the fuzzy-match cut-off
 # ---------------------------------------------------------------------------
-
-
-@dataclass
-class WorkItem:
-    action: str  # TRANSLATE | REVISE | REUSE | RECHECK | RETIRE | COPY
-    unit_hash: str
-    node_type: str
-    context: str  # heading trail — read-only context for the prompt
-    new_source: str = ""
-    old_source: str = ""
-    sim: float = 0.0
-    placeholders: list[str] = field(default_factory=list)
-    node: SyntaxTreeNode | None = field(default=None, repr=False)
 
 
 def _heading_trail(node: SyntaxTreeNode) -> str:
@@ -326,166 +155,9 @@ def _heading_trail(node: SyntaxTreeNode) -> str:
     return " › ".join(reversed(trail))
 
 
-# GitHub alert markers. These are keywords, not prose: `> [!NOTE]` is what
-# makes GitHub render the blockquote as an alert, and a model that helpfully
-# translates it produces a blockquote that merely *looks* like one. They are
-# plain text in the token stream — the parser is configured to read alerts as
-# ordinary blockquotes, because mdformat cannot render the dedicated `alert`
-# nodes at all (see `app/utils.py`) — so nothing else here would protect them.
-_ALERT_MARKER = re.compile(r"\[!(?:NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]")
-
-
-def _placeholders(node: SyntaxTreeNode) -> list[str]:
-    """Inline spans the translator must reproduce byte-for-byte.
-
-    This is the XLIFF `<ph>` idea: protect them, don't trust the model with
-    them. Verifying they survive round-trip is a cheap post-translation gate.
-    """
-    out: list[str] = []
-    stack = list(node.children)
-    while stack:
-        n = stack.pop()
-        if n.type in NON_TRANSLATABLE_INLINE:
-            out.append(own_text(n) or getattr(n, "attrs", {}).get("src", ""))
-        if n.type == "link":
-            out.append(n.attrs.get("href", ""))
-        stack.extend(n.children)
-    out.extend(_ALERT_MARKER.findall(_unit_source(node)))
-    return [p for p in out if p]
-
-
-def _units_under(node: SyntaxTreeNode):
-    if is_unit(node):
-        yield node
-        return
-    if node.type in OPAQUE:
-        return
-    for c in node.children:
-        yield from _units_under(c)
-
-
-def _opaque_under(node: SyntaxTreeNode):
-    """Code fences, raw HTML, front matter — never translated, but they still
-    have to be carried into the target document when they change.
-
-    Only the *new* side is ever walked: assembly rebuilds the target from the
-    new tree, so a removed opaque block disappears by construction and needs no
-    op. Nothing here enters the translation memory, so there is nothing to
-    retire either.
-    """
-    if is_unit(node):
-        return
-    if node.type in OPAQUE:
-        yield node
-        return
-    for c in node.children:
-        yield from _opaque_under(c)
-
-
-def _copy_items(node: SyntaxTreeNode) -> list[WorkItem]:
-    """COPY work items for the opaque blocks under a changed subtree."""
-    return [
-        WorkItem("COPY", o.h, o.type, _heading_trail(o),
-                 new_source=own_text(o), node=o)
-        for o in _opaque_under(node)
-    ]
-
-
-def plan(old_md: str, new_md: str) -> list[WorkItem]:
-    """Turn two markdown revisions into a translation work list."""
-    old_root = SyntaxTreeNode(markdown_to_ast(old_md))
-    new_root = SyntaxTreeNode(markdown_to_ast(new_md))
-    ops = diff_trees(old_root, new_root)
-
-    items: list[WorkItem] = []
-    for op in ops:
-        if op.kind == "EQUAL":
-            for u in _units_under(op.new):
-                items.append(WorkItem("REUSE", u.h, u.type, _heading_trail(u),
-                                      _unit_source(u)))
-        elif op.kind == "MOVE":
-            # Content identical, position changed: keep the translation but
-            # flag it — gendered/deictic phrasing can depend on the section.
-            for u in _units_under(op.new):
-                items.append(WorkItem("RECHECK", u.h, u.type, _heading_trail(u),
-                                      _unit_source(u)))
-            items.extend(_copy_items(op.new))
-        elif op.kind == "UPDATE":
-            items.append(WorkItem("REVISE", op.new.h, op.new.type,
-                                  _heading_trail(op.new),
-                                  _unit_source(op.new), _unit_source(op.old),
-                                  op.sim, _placeholders(op.new)))
-        elif op.kind == "INSERT":
-            for u in _units_under(op.new):
-                items.append(WorkItem("TRANSLATE", u.h, u.type, _heading_trail(u),
-                                      _unit_source(u),
-                                      placeholders=_placeholders(u), node=u))
-            items.extend(_copy_items(op.new))
-        elif op.kind == "DELETE":
-            for u in _units_under(op.old):
-                items.append(WorkItem("RETIRE", u.h, u.type, _heading_trail(u),
-                                      old_source=_unit_source(u), node=u))
-    return _fuzzy_pair(items)
-
-
 # Fuzzy matches below this are worse than translating from scratch; SDL/Trados
 # and memoQ default their TM cut-off to 70% for the same reason.
 FUZZY_THRESHOLD = 0.6
-
-
-def _fuzzy_pair(items: list[WorkItem]) -> list[WorkItem]:
-    """Upgrade leftover RETIRE+TRANSLATE pairs into REVISE.
-
-    The local alignment in `_align_window` only sees one sibling run. A unit
-    that was *moved and edited* lands in the global delete/insert pools, so a
-    second, document-wide fuzzy pass recovers it — this is the classic CAT-tool
-    fuzzy match, just keyed on units instead of raw lines.
-    """
-    gone = [i for i in items if i.action == "RETIRE"]
-    fresh = [i for i in items if i.action == "TRANSLATE"]
-    if not gone or not fresh or len(gone) * len(fresh) > 250_000:
-        return items
-
-    scored = sorted(
-        (
-            (ratio(g.old_source, f.new_source), gi, fi)
-            for gi, g in enumerate(gone)
-            for fi, f in enumerate(fresh)
-            if g.node_type == f.node_type
-        ),
-        key=lambda t: -t[0],
-    )
-    used_g: set[int] = set()
-    used_f: set[int] = set()
-    for score, gi, fi in scored:
-        if score < FUZZY_THRESHOLD or gi in used_g or fi in used_f:
-            continue
-        used_g.add(gi)
-        used_f.add(fi)
-        fresh[fi].action = "REVISE"
-        fresh[fi].old_source = gone[gi].old_source
-        fresh[fi].sim = score
-    retired = {id(gone[gi]) for gi in used_g}
-    return [i for i in items if id(i) not in retired]
-
-
-# ---------------------------------------------------------------------------
-# 4. Translation memory keying (the O(n) shortcut)
-# ---------------------------------------------------------------------------
-
-
-def tm_keys(md: str) -> dict[str, str]:
-    """{unit_hash: source} for one document.
-
-    With a persisted TM keyed by these hashes you do not need a diff at all to
-    answer "what is untranslated": it is `tm_keys(new) - tm.keys()`. The tree
-    diff above is what upgrades a plain miss into a *revision* (old source +
-    old translation + new source), which is cheaper and far more consistent
-    than translating from scratch.
-    """
-    root = SyntaxTreeNode(markdown_to_ast(md))
-    hash_tree(root)
-    return {u.h: _unit_source(u) for u in _units_under(root)}
 
 
 # ---------------------------------------------------------------------------
@@ -505,7 +177,7 @@ def _focus(old: str, new: str) -> tuple[str, str]:
     """Clip both sides around their *first difference*.
 
     Plain head-truncation hides the edit whenever it falls past the cut-off,
-    which makes a REVISE line look like it reports two identical strings.
+    which makes an edit line look like it reports two identical strings.
     """
     o, n = norm(old), norm(new)
     lead = 30

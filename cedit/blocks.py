@@ -5,7 +5,7 @@ A document is a sequence of **edit blocks** in document order:
 - *inline units* — the nodes owning an `inline` child (`heading`,
   `paragraph`, `th`, `td`), exactly `tree_diff`'s translation units;
 - *opaque blocks* — `fence`, `code_block`, `html_block`, `front_matter`,
-  `hr`. `tree_diff` only ever copies these (COPY); here they are
+  `hr`. `tree_diff` hashes these but never makes them units; here they are
   first-class, because the motivating local edit is a rewritten code fence.
 
 Identity is the Merkle hash `tree_diff.hash_tree` assigns, disambiguated by

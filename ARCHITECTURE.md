@@ -314,18 +314,18 @@ upstream text reaches the working file for an edited block is the explicit
 
 ## `cedit/align.py` — flat block-sequence alignment
 
-Three status constants — `SAME`, `EDITED`, `DELETED` (`align.py:21-23`) —
+Three status constants — `SAME`, `EDITED`, `DELETED` (`align.py:37-39`) —
 whose values are their own names.
 
-**`Fate`** (`align.py:26`): `status: str`, `moved: bool`,
+**`Fate`** (`align.py:43`): `status: str`, `moved: bool`,
 `other: Block | None` (the counterpart, `None` only when `DELETED`),
 `sim: float`.
 
-**`_sim(a, b)`** (`align.py:36`) — `0.0` when `kind` or `node_type` differ,
+**`_sim(a, b)`** (`align.py:52`) — `0.0` when `kind` or `node_type` differ,
 otherwise `tree_diff.ratio` over `Block.compare_text`. A fence never pairs
 with a paragraph, whatever the text similarity.
 
-**`align(base, other)`** (`align.py:42`) returns
+**`align(base, other)`** (`align.py:58`) returns
 `(fates parallel to base, blocks of other that are new)` in four passes:
 
 1. **LCS over Merkle hashes.** `SequenceMatcher(None, [b.hash …], [x.hash …],
@@ -335,9 +335,9 @@ with a paragraph, whatever the text similarity.
    (base, other) pair in the window is scored and sorted descending; pairs at
    or above `tree_diff.SIM_THRESHOLD` (0.4) whose ends are both still free
    become `Fate(EDITED, False, …)`.
-3. **The 1-for-1 positional fallback** (`align.py:84-90`) — cedit's one
-   deliberate divergence from `tree_diff`'s own pairing heuristics, and the
-   comment at that site explains why. When a `replace` window holds exactly one block on
+3. **The 1-for-1 positional fallback** (`align.py:100-106`) — the one pass
+   that is not similarity-driven at all, and the comment at that site
+   explains why. When a `replace` window holds exactly one block on
    each side and they share `kind` and `node_type`, they are paired *whatever*
    the text score: `a` → `a-adapted` in a table cell scores 0.18, but
    positional evidence is conclusive. Without this, a short local edit would be
@@ -577,34 +577,34 @@ What **cedit actually calls**:
 
 | Symbol | Called from | Role |
 | --- | --- | --- |
-| `hash_tree(node)` (`tree_diff.py:86`) | `blocks.parse_doc` | annotates every node with `.h` (16-hex sha256 prefix) and `.size`. `hash(node) = H(type, tag, info, own_text, hash(c1)…hash(cn))`; a unit's identity is its inline source. **`map` (line numbers) and `level` are deliberately excluded**, so an insert above a block does not change its hash |
-| `is_unit(node)` (`:62`), `OPAQUE` (`:45`) | `blocks.parse_doc` | the two block classes |
-| `own_text(node)` (`:76`), `attr(node, name)` (`:66`) | `blocks.parse_doc`, `blocks.block_signature` | safe accessors — the root node raises on `tag`/`content`/`info` |
-| `_unit_source(node)` (`:117`) | `blocks.parse_doc` | a unit's inline `.content` — its identity |
-| `_heading_trail(node)` (`:312`) | `blocks.parse_doc` | the `context` string, ancestors joined with ` › ` |
-| `ratio(a, b)` (`:149`) | `align._sim` | normalised text similarity, `autojunk=False` (not optional — difflib's junk heuristic skews and de-symmetrises character-sequence scores past 200 items) |
-| `SIM_THRESHOLD = 0.4` (`:146`) | `align.align` | pairing floor inside a replace window |
-| `FUZZY_THRESHOLD = 0.6` (`:434`) | `align.align` | floor for the global moved-and-edited pass |
-| `_focus(old, new)` (`:505`), `_clip(text, start)` (`:499`) | `cli._pair`, `cli._print_conflict` | display clipping, `WIDTH = 110` |
+| `hash_tree(node)` (`tree_diff.py:76`) | `blocks.parse_doc` | annotates every node with `.h` (16-hex sha256 prefix) and `.size`. `hash(node) = H(type, tag, info, own_text, hash(c1)…hash(cn))`; a unit's identity is its inline source. **`map` (line numbers) and `level` are deliberately excluded**, so an insert above a block does not change its hash |
+| `is_unit(node)` (`:52`), `OPAQUE` (`:38`) | `blocks.parse_doc` | the two block classes |
+| `own_text(node)` (`:66`), `attr(node, name)` (`:56`) | `blocks.parse_doc`, `blocks.block_signature` | safe accessors — the root node raises on `tag`/`content`/`info` |
+| `_unit_source(node)` (`:107`) | `blocks.parse_doc` | a unit's inline `.content` — its identity |
+| `_heading_trail(node)` (`:140`) | `blocks.parse_doc` | the `context` string, ancestors joined with ` › ` |
+| `ratio(a, b)` (`:124`) | `align._sim` | normalised text similarity, `autojunk=False` (not optional — difflib's junk heuristic skews and de-symmetrises character-sequence scores past 200 items) |
+| `SIM_THRESHOLD = 0.4` (`:121`) | `align.align` | pairing floor inside a replace window |
+| `FUZZY_THRESHOLD = 0.6` (`:160`) | `align.align` | floor for the global moved-and-edited pass |
+| `_focus(old, new)` (`:176`), `_clip(text, start)` (`:170`) | `cli._pair`, `cli._print_conflict` | display clipping, `WIDTH = 110` |
 
-`norm(text)` (`:53`) collapses whitespace before hashing and before every
+`norm(text)` (`:43`) collapses whitespace before hashing and before every
 similarity score, which is why an upstream reflow (80 cols → 72) is a no-op
 for the overlay.
 
-What is **unused by cedit** — the translation-planning surface, inert here:
-`plan` (`:395`) and `WorkItem`
-(`:300`), `diff_trees` (`:197`) with `_diff_node` / `_diff_children` /
-`_align_window` / `_detect_moves` and `Op` / `KINDS`, `similarity` (`:160`),
-`tm_keys` (`:478`), `_placeholders` (`:339`), `_units_under` (`:358`),
-`_opaque_under` (`:368`), `_fuzzy_pair` (`:437`),
-`NON_TRANSLATABLE_INLINE` (`:48`).
+That table is the whole module: every top-level symbol in `tree_diff.py` is
+reached from cedit. It was not always — roughly half the file was a
+translation-planning surface inherited from the project this code was
+vendored from, unreachable here since the day it arrived and deleted in
+CED-19 once nothing re-vendored it, hash-neutrally and measured
+(`tests/parser_contract.py` green on both sides).
 
-`align.py` exists precisely because `plan()` answers a different question: it
-does not pair opaque blocks (a changed fence is just `COPY`) and does not
-distinguish duplicate occurrences (same source ⇒ same translation). The merge
-needs both, so `align` re-implements the pairing over flat block sequences
-using `tree_diff`'s thresholds — one definition of "similar enough", two
-consumers.
+`align.py` does the pairing this module deliberately does not: `tree_diff`
+gives a block its identity (a hash) and a way to score two blocks against
+each other (`ratio`, the thresholds), and `align.align` turns those into a
+mapping from every base block to its counterpart — over *flat* block
+sequences, pairing opaque blocks and keeping duplicate occurrences distinct,
+both of which the merge needs and neither of which falls out of hashing
+alone.
 
 ## Where each invariant lives
 
@@ -613,7 +613,7 @@ names are the durable reference.
 
 | # (AGENTS.md) | Enforced / carried by |
 | --- | --- |
-| 1 — `mdcore/` frozen | Convention plus one check: the freeze notices at `mdcore/__init__.py`, `mdcore/tree_diff.py:1-14` and `mdcore/utils.py:1-9`, and SPEC.md's *Reuse rules*. Nothing can catch a *refactor* — review has to — but `tests/parser_contract.py` catches any refactor that changed behaviour |
+| 1 — `mdcore/` frozen | Convention plus one check: the freeze notices at `mdcore/__init__.py`, `mdcore/tree_diff.py:1-17` and `mdcore/utils.py:1-9`, and SPEC.md's *Reuse rules*. Nothing can catch a *refactor* — review has to — but `tests/parser_contract.py` catches any refactor that changed behaviour |
 | 2 — exact pins | `requirements.txt` (the rationale is in the file itself) → `mdcore/utils.make_parser` (`utils.py:16`) → `blocks.canonicalise` (`blocks.py:96`) → every `Block.hash` and `ParsedDoc.doc_hash` |
 | 3 — no silent clobber | `merge3.merge` (`merge3.py:240-241`) records the conflict **and** splices the local text; `Conflict` carries all three versions (`merge3.py:81`) and `state.set_entry` persists them; `cli.cmd_sync` (`cli.py:159-163`) refuses to sync a doc with open conflicts; `cli.cmd_resolve` (`cli.py:257`) is the only path that takes upstream text |
 | 4 — exit codes | `cli.main` (`cli.py:377-379`) maps four exception types to 2; `cli.cmd_sync` (`cli.py:214-216`) and `cli.cmd_status` (`cli.py:243`) are the only sources of 1 |
@@ -783,11 +783,11 @@ of the work is:
 
 ### Recipe: changing alignment behaviour
 
-`align.align` (`align.py:42`) is outside the frozen core, and is the safe
+`align.align` (`align.py:58`) is outside the frozen core, and is the safe
 place to experiment: nothing it does reaches a stored hash. The four passes
 run LCS → in-window greedy → 1-for-1 positional fallback → global move then
 global fuzzy, and the order matters — the positional fallback
-(`align.py:84-90`) exists because a short edit in a table cell scores 0.18
+(`align.py:100-106`) exists because a short edit in a table cell scores 0.18
 and would otherwise be misread as structural drift and *rejected*, not
 merely mispaired.
 

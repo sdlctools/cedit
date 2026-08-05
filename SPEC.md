@@ -43,12 +43,13 @@ upstream_changes = align(blocks(B), blocks(U))   # what upstream changed
 `align` (`cedit/align.py`) is a flat block-sequence alignment built from
 `tree_diff`'s pieces — LCS over Merkle hashes, greedy similarity pairing in
 each replace window, a global same-hash move pass, a global fuzzy pass for
-moved-and-edited blocks, the same thresholds. It exists because
-`tree_diff.plan()` answers a different question — which units need
-re-translating — and deliberately does not pair opaque blocks (a changed
-fence is just COPY) nor distinguish duplicate occurrences — both of which
-the merge needs. One rule is new and
-editing-specific: a 1-for-1 replacement of a like-typed block inside one
+moved-and-edited blocks, the same thresholds. It works over the *flat* block
+sequence rather than the tree because the question the merge asks is a
+question about pairs: for every block of B, which block of L (or U) is it
+now. Opaque blocks are paired like any other — the motivating local edit is
+a rewritten code fence — and two byte-identical blocks stay distinct, since
+a user may have adapted only the third copy of a repeated command. One rule
+is editing-specific: a 1-for-1 replacement of a like-typed block inside one
 replace window is an **edit** regardless of text similarity (`a` →
 `a-adapted` in a table cell scores 0.18; for translation a mis-split just
 retranslates, here it would misread an edit as structural drift).
@@ -66,13 +67,12 @@ load-bearing as the hashing itself.
 `tree_diff` segments a document into *translation units* — the prose-bearing
 blocks. The critical difference for editing: the motivating edit is a **code
 fence**, and in `tree_diff` fences, raw HTML and front matter are *opaque* —
-they never become translation units, they only get `COPY`. For cedit the
+hashed, so a change to one is noticed, but never inline units. For cedit the
 editable set is therefore the union:
 
 - **inline units** (heading / paragraph / th / td) — keyed by unit hash;
 - **opaque blocks** (fence / html\_block / front matter) — keyed by their
-  own content hash (`_opaque_under` already computes these; the manifest's
-  `opaque_hashes` list is the precedent).
+  own content hash, which `hash_tree` gives them like any other node.
 
 Both kinds diff, overlay, and merge identically; only the splice differs
 (inline content vs. whole-token replacement). Granularity caveat: an opaque
@@ -253,10 +253,11 @@ decides it, and what consumers do when hashes moved. The invariants:
    hash of the preceding base unit (fallback: following unit, then heading
    trail); anchor retired upstream ⇒ ORPHAN. Local deletions recorded as
    `(hash, occurrence) → delete` overlay entries.
-3. **Assisted rebase (optional):** the analog of `tree_diff.plan`'s `REVISE` — on CONFLICT, an LLM ports the local adaptation onto the new
+3. **Assisted rebase (optional):** the analog of a CAT tool's fuzzy
+   match — on CONFLICT, an LLM ports the local adaptation onto the new
    upstream text ("re-apply *zsh* to the new command"), entering the overlay
-   only as `review_status: machine` pending `resolve`. Same gate philosophy
-   as the placeholder gate: assist, never silently decide.
+   only as `review_status: machine` pending `resolve`. Same philosophy as
+   every other gate here: assist, never silently decide.
 
 ## Non-goals
 
