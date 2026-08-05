@@ -1,13 +1,13 @@
 """cedit — continuous editing of vendored Markdown (SPEC.md).
 
-    python3 -m cedit snapshot <doc> --from <upstream-file>
-    python3 -m cedit diff [<doc>...] [--unified]
-    python3 -m cedit sync [<doc>...] [--from <upstream dir-or-file>] [-n]
-    python3 -m cedit status [<doc>...]
-    python3 -m cedit resolve <doc> <hash[:occ]> --take local|upstream | --show
+    cedit snapshot <doc> --from <upstream-file>
+    cedit diff [<doc>...] [--unified]
+    cedit sync [<doc>...] [--from <upstream dir-or-file>] [-n]
+    cedit status [<doc>...]
+    cedit resolve <doc> <hash[:occ]> --take local|upstream | --show
 
-One entry point, the same subcommands for a human and for CI. Exit codes:
-0 clean, 1 the run recorded (or found) unresolved conflicts, 2 errors.
+One entry point (`python3 -m cedit` runs it too), the same subcommands for a
+human and for CI. Exit codes: 0 clean, 1 conflicts recorded or found, 2 errors.
 """
 
 from __future__ import annotations
@@ -62,7 +62,7 @@ def _print_conflict(doc: str, conflict: Conflict, *, full: bool = False) -> None
         print(f"    upstream: {show(conflict.upstream_text or '')}")
     print(f"    local   : {show(conflict.local_text)}"
           + ("" if conflict.reason == ORPHAN else "  (kept in the working file)"))
-    print(f"    resolve : python3 -m cedit resolve {doc} "
+    print(f"    resolve : cedit resolve {doc} "
           f"{conflict.key} --take local|upstream")
     print()
 

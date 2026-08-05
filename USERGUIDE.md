@@ -71,27 +71,35 @@ ______________________________________________________________________
 ## 2. Prerequisites
 
 cedit runs from the root of the repository that holds your vendored copies —
-a *different* repository from this one. Install it once, from a clone of this
-repo:
+a *different* repository from the one cedit itself lives in. Install it once:
+
+```bash
+pipx install cedit   # or: pip install cedit
+cedit --help
+```
+
+Every example below is written as `cedit <subcommand>`. `python3 -m cedit
+<subcommand>` is the same entry point with the same arguments, so use
+whichever you prefer — the module form is what you want when cedit is
+installed in a virtualenv you'd rather not activate:
+`/path/to/venv/bin/python3 -m cedit …`.
+
+**Install cedit into an environment of its own.** `pipx` above does that for
+you; a dedicated virtualenv does the same. The reason is the pins below:
+`mdcore/utils.make_parser` appends *every installed* mdformat parser
+extension, so the set of mdformat plugins in the environment is part of the
+parser identity. A shared environment carrying other mdformat plugins can
+move the hashes in your `.cedit/` state even though cedit's own pinned
+dependencies were honoured.
+
+Working on cedit itself rather than using it? Install from a clone instead:
 
 ```bash
 python3 -m venv venv
 venv/bin/pip install -r requirements.txt   # the parsing stack, pinned EXACTLY
-venv/bin/pip install -e .                  # puts `cedit` on the path
-venv/bin/python3 -m pytest                 # 24 tests, no network, <1s
+venv/bin/pip install -e .                  # puts `cedit` on the venv's path
+venv/bin/python3 -m pytest                 # 27 tests, no network, <1s
 ```
-
-Then, in your consumer repo, activate that venv and use `python3 -m cedit`:
-
-```bash
-source /path/to/cedit/venv/bin/activate
-python3 -m cedit --help
-```
-
-Every example below assumes that activated venv. Without it — or if you skipped
-the editable install — use the interpreter directly:
-`/path/to/cedit/venv/bin/python3 -m cedit …`. There is no `cedit` console
-script; `python3 -m cedit` is the invocation.
 
 **The pins are load-bearing.** `requirements.txt` pins `markdown-it-py`,
 `mdit-py-plugins`, `mdformat`, `mdformat-gfm`, `mdformat-frontmatter` and
@@ -106,7 +114,7 @@ relative to the root, and the state directory is resolved from the working
 directory. Running from a subdirectory does not error — it just finds no state:
 
 ```console
-$ cd sub && python3 -m cedit status
+$ cd sub && cedit status
 nothing tracked
 ```
 
@@ -160,7 +168,7 @@ bash scripts/deploy.sh --env staging
 ```
 EOF
 
-python3 -m cedit snapshot skills/deploy.md --from vendor/skills/deploy.md
+cedit snapshot skills/deploy.md --from vendor/skills/deploy.md
 ````
 
 ```console
@@ -176,7 +184,7 @@ Now adapt it. Your environment has no `bash`, so rewrite the healthcheck fence:
 
 ```bash
 perl -0pi -e 's/```bash\nbash scripts\/healthcheck/```zsh\nzsh scripts\/healthcheck/' skills/deploy.md
-python3 -m cedit diff
+cedit diff
 ```
 
 ```console
@@ -198,7 +206,7 @@ Upstream evolves: the intro gets a sentence, and the *other* fence gains a flag.
 ```bash
 sed -i 's/puts it on staging./puts it on staging, then promotes it to production./' vendor/skills/deploy.md
 sed -i 's/deploy.sh --env staging/deploy.sh --env staging --wait/' vendor/skills/deploy.md
-python3 -m cedit sync --from vendor
+cedit sync --from vendor
 ```
 
 ```console
@@ -213,7 +221,7 @@ Now the interesting case. Upstream touches the very fence you rewrote:
 
 ```bash
 sed -i 's/healthcheck.sh --strict/healthcheck.sh --strict --timeout 60/' vendor/skills/deploy.md
-python3 -m cedit sync --from vendor
+cedit sync --from vendor
 echo "rc=$?"
 ```
 
@@ -224,7 +232,7 @@ skills/deploy.md: 0 edit(s) reapplied, 0 block(s) updated from upstream, 1 confl
     base    : bash scripts/healthcheck.sh --strict
     upstream: bash scripts/healthcheck.sh --strict --timeout 60
     local   : zsh scripts/healthcheck.sh --strict  (kept in the working file)
-    resolve : python3 -m cedit resolve skills/deploy.md 7b47884c75de548e:0 --take local|upstream
+    resolve : cedit resolve skills/deploy.md 7b47884c75de548e:0 --take local|upstream
 
 rc=1
 ```
@@ -234,9 +242,9 @@ zsh line is still in the file; upstream's version is recorded, not applied. Keep
 the adaptation:
 
 ```bash
-python3 -m cedit resolve skills/deploy.md 7b47884c75de548e --take local
-python3 -m cedit sync --from vendor
-python3 -m cedit status
+cedit resolve skills/deploy.md 7b47884c75de548e --take local
+cedit sync --from vendor
+cedit status
 ```
 
 ```console
@@ -264,7 +272,7 @@ One global flag, and it goes **before** the subcommand:
 | `-h`, `--help` | — | usage; also available per subcommand |
 
 ```console
-$ python3 -m cedit --help
+$ cedit --help
 usage: cedit [-h] [--state-dir STATE_DIR]
              {snapshot,diff,sync,status,resolve} ...
 
@@ -290,7 +298,7 @@ same files — useful for a dry experiment you do not want in the committed
 `.cedit/`:
 
 ```console
-$ python3 -m cedit --state-dir .cedit-alt status
+$ cedit --state-dir .cedit-alt status
 nothing tracked
 ```
 
@@ -299,7 +307,7 @@ nothing tracked
 Start tracking one document. Run once per document, ever.
 
 ```bash
-python3 -m cedit snapshot skills/deploy.md --from vendor/skills/deploy.md
+cedit snapshot skills/deploy.md --from vendor/skills/deploy.md
 ```
 
 | Flag | Default | Meaning |
@@ -317,9 +325,9 @@ exists on disk:
   as your overlay:
 
 ```console
-$ python3 -m cedit snapshot G.md --from vendor/G.md
+$ cedit snapshot G.md --from vendor/G.md
 G.md: tracking (base 7f3d2b74871ef834, from vendor/G.md), 1 local edit(s) recorded
-$ python3 -m cedit diff
+$ cedit diff
 G.md: 1 local edit(s)
 [edit opaque fence] #a77bdf7f48c7f708:0  sim=0.80
     ctx  : G
@@ -340,7 +348,7 @@ and becomes the default `--from` for later syncs.
 Snapshotting twice is an error, not a re-vendoring:
 
 ```console
-$ python3 -m cedit snapshot A.md --from vendor/A.md
+$ cedit snapshot A.md --from vendor/A.md
 A.md: already tracked — use `cedit sync` to take a new upstream revision
 ```
 
@@ -350,9 +358,9 @@ Show what you have changed, relative to the base snapshot. Reads nothing but
 `.cedit/base/` and your working copy; writes nothing at all.
 
 ```bash
-python3 -m cedit diff                      # every tracked document
-python3 -m cedit diff skills/deploy.md     # one document
-python3 -m cedit diff --unified            # git-style, for reviewers
+cedit diff                      # every tracked document
+cedit diff skills/deploy.md     # one document
+cedit diff --unified            # git-style, for reviewers
 ```
 
 | Flag | Default | Meaning |
@@ -404,7 +412,7 @@ G.md: 1 local edit(s)
 overlay, never the stored form:
 
 ````console
-$ python3 -m cedit diff --unified
+$ cedit diff --unified
 --- base/skills/deploy/SKILL.md
 +++ skills/deploy/SKILL.md
 @@ -11,8 +11,8 @@
@@ -429,10 +437,10 @@ so a structural local change (§13) does not stop it. That makes it the tool for
 The 3-way merge: take a new upstream revision, re-apply your overlay on top.
 
 ```bash
-python3 -m cedit sync --from vendor              # every tracked doc, upstream dir
-python3 -m cedit sync skills/deploy.md --from vendor/skills/deploy.md
-python3 -m cedit sync --from vendor --dry-run    # report, write nothing
-python3 -m cedit sync                            # each doc's recorded upstream
+cedit sync --from vendor              # every tracked doc, upstream dir
+cedit sync skills/deploy.md --from vendor/skills/deploy.md
+cedit sync --from vendor --dry-run    # report, write nothing
+cedit sync                            # each doc's recorded upstream
 ```
 
 | Flag | Default | Meaning |
@@ -447,9 +455,9 @@ is used as-is. Passing a file while several documents are in scope is refused,
 because one file cannot be the upstream of two documents:
 
 ```console
-$ python3 -m cedit sync --from vendor/skills/A.md
+$ cedit sync --from vendor/skills/A.md
 --from is a file but several documents are being synced — pass a directory, or one document
-$ python3 -m cedit sync skills/A.md --from vendor/skills/A.md
+$ cedit sync skills/A.md --from vendor/skills/A.md
 skills/A.md: up to date
 ```
 
@@ -502,8 +510,8 @@ Per-document summary. Read-only, no upstream needed, safe at any time — this i
 the command a CI job runs.
 
 ```bash
-python3 -m cedit status
-python3 -m cedit status skills/deploy.md
+cedit status
+cedit status skills/deploy.md
 ```
 
 | Flag | Default | Meaning |
@@ -511,7 +519,7 @@ python3 -m cedit status skills/deploy.md
 | `docs...` | every tracked document | positional, repeatable: which documents to report |
 
 ```console
-$ python3 -m cedit status
+$ cedit status
 skills/A.md: 1 local edit(s), 0 unresolved conflict(s); base 191ead45bd56de1e synced 2026-08-05T00:00:20Z (upstream: vendor/skills/A.md)
 skills/B.md: 1 local edit(s), 0 unresolved conflict(s); base 8949953623be4edb synced 2026-08-05T00:00:20Z (upstream: vendor/skills/B.md)
 ```
@@ -530,7 +538,7 @@ With nothing tracked at all, `status` is a clean no-op — exit **0**, unlike
 `diff` and `sync`, which treat it as an error:
 
 ```console
-$ python3 -m cedit status
+$ cedit status
 nothing tracked
 ```
 
@@ -538,7 +546,7 @@ A document with a local structural change reports that in place of the edit
 count — and, note, does **not** change the exit code:
 
 ```console
-$ python3 -m cedit status; echo "rc=$?"
+$ cedit status; echo "rc=$?"
 skills/deploy/SKILL.md: STRUCTURAL DRIFT (see `cedit diff`), 0 unresolved conflict(s); base 1325c1dfe3186353 synced 2026-08-04T23:58:47Z (upstream: vendor/skills/deploy/SKILL.md)
 rc=0
 ```
@@ -551,9 +559,9 @@ for `STRUCTURAL DRIFT` or run `diff`, which exits 2 on it.
 Settle exactly one recorded conflict.
 
 ```bash
-python3 -m cedit resolve skills/deploy.md 7b47884c75de548e --show
-python3 -m cedit resolve skills/deploy.md 7b47884c75de548e --take local
-python3 -m cedit resolve skills/deploy.md 7b47884c75de548e:0 --take upstream
+cedit resolve skills/deploy.md 7b47884c75de548e --show
+cedit resolve skills/deploy.md 7b47884c75de548e --take local
+cedit resolve skills/deploy.md 7b47884c75de548e:0 --take upstream
 ```
 
 | Flag | Default | Meaning |
@@ -568,9 +576,9 @@ Any unambiguous prefix works, so the bare hash is normally enough. Ambiguity is
 refused rather than guessed:
 
 ```console
-$ python3 -m cedit resolve G.md f --take local
+$ cedit resolve G.md f --take local
 'f' is ambiguous: f78f8a455566e4e5:0, f86b66327dc68b6d:0
-$ python3 -m cedit resolve skills/deploy/SKILL.md 5 --take local
+$ cedit resolve skills/deploy/SKILL.md 5 --take local
 no conflict matches '5' (open ones: 2a37ee9b554dd0c8:0)
 ```
 
@@ -579,7 +587,7 @@ the three versions unclipped, so you can read a long block in full before
 deciding:
 
 ```console
-$ python3 -m cedit resolve GUIDE.md 7b47884c75de548e --show
+$ cedit resolve GUIDE.md 7b47884c75de548e --show
 [CONFLICT opaque fence] #7b47884c75de548e:0
     ctx     : Preflight
     base    : bash scripts/healthcheck.sh --strict
@@ -588,7 +596,7 @@ $ python3 -m cedit resolve GUIDE.md 7b47884c75de548e --show
 
     local   : zsh scripts/healthcheck.sh --strict
   (kept in the working file)
-    resolve : python3 -m cedit resolve GUIDE.md 7b47884c75de548e:0 --take local|upstream
+    resolve : cedit resolve GUIDE.md 7b47884c75de548e:0 --take local|upstream
 ```
 
 (The blank lines are the blocks' own trailing newlines — `--show` is verbatim,
@@ -599,7 +607,7 @@ written to the document; the conflict record is dropped and the overlay is
 re-derived, which re-keys your text to the **new** upstream block:
 
 ```console
-$ python3 -m cedit resolve skills/deploy/SKILL.md 7b47884c75de548e --take local
+$ cedit resolve skills/deploy/SKILL.md 7b47884c75de548e --take local
 skills/deploy/SKILL.md #7b47884c75de548e:0: kept local text — it is now an ordinary overlay edit against the new base
 ```
 
@@ -607,7 +615,7 @@ skills/deploy/SKILL.md #7b47884c75de548e:0: kept local text — it is now an ord
 re-renders it (verifying block structure survived), and drops the record:
 
 ```console
-$ python3 -m cedit resolve skills/deploy/SKILL.md 7b47884c75de548e:0 --take upstream
+$ cedit resolve skills/deploy/SKILL.md 7b47884c75de548e:0 --take upstream
 skills/deploy/SKILL.md #7b47884c75de548e:0: upstream text taken
 ```
 
@@ -622,9 +630,9 @@ Two refusals worth knowing:
   manifest:
 
 ```console
-$ python3 -m cedit resolve skills/deploy/SKILL.md 2a37ee9b554dd0c8 --take local
+$ cedit resolve skills/deploy/SKILL.md 2a37ee9b554dd0c8 --take local
 skills/deploy/SKILL.md #2a37ee9b554dd0c8:0: upstream deleted this block — keeping it would be a structural edit (phase 2). Its text is preserved in the manifest; `--take upstream` accepts the deletion.
-$ python3 -m cedit resolve skills/deploy/SKILL.md 2a37ee9b554dd0c8 --take upstream
+$ cedit resolve skills/deploy/SKILL.md 2a37ee9b554dd0c8 --take upstream
 skills/deploy/SKILL.md #2a37ee9b554dd0c8:0: upstream deletion accepted
 ```
 
@@ -633,7 +641,7 @@ skills/deploy/SKILL.md #2a37ee9b554dd0c8:0: upstream deletion accepted
   work:
 
 ```console
-$ python3 -m cedit resolve GUIDE.md 7b47884c75de548e --take upstream
+$ cedit resolve GUIDE.md 7b47884c75de548e --take upstream
 GUIDE.md #7b47884c75de548e:0: the conflicted block is no longer in the file as recorded (edited since?) — fix the text by hand, then `resolve --take local`
 ```
 
@@ -704,19 +712,19 @@ matter, and an upstream change to any *other* key in it is a conflict on the
 whole block:
 
 ```console
-$ python3 -m cedit diff
+$ cedit diff
 SKILL.md: 1 local edit(s)
 [edit opaque front_matter] #3989fd03ddc7beae:0  sim=0.89
     base : …ame: deploy version: 1 model: sonnet
     local: …ame: deploy version: 1 model: opus
 
-$ python3 -m cedit sync --from vendor
+$ cedit sync --from vendor
 SKILL.md: 0 edit(s) reapplied, 0 block(s) updated from upstream, 1 conflict(s)
 [CONFLICT opaque front_matter] #3989fd03ddc7beae:0
     base    : name: deploy version: 1 model: sonnet
     upstream: name: deploy version: 2 model: sonnet
     local   : name: deploy version: 1 model: opus  (kept in the working file)
-    resolve : python3 -m cedit resolve SKILL.md 3989fd03ddc7beae:0 --take local|upstream
+    resolve : cedit resolve SKILL.md 3989fd03ddc7beae:0 --take local|upstream
 ```
 
 You changed `model`, upstream changed `version`, and the two never touched — but
@@ -756,7 +764,7 @@ decision. What it does block is the *next* sync of that document, so you can
 never merge against a base you never accepted:
 
 ```console
-$ python3 -m cedit sync --from vendor; echo "rc=$?"
+$ cedit sync --from vendor; echo "rc=$?"
 skills/deploy/SKILL.md: 1 unresolved conflict(s) — resolve them before syncing again
 rc=2
 ```
@@ -772,10 +780,10 @@ You have a file from somewhere else and you want to own a local variant of it.
 mkdir -p vendor/skills && cp ~/upstream-repo/skills/deploy.md vendor/skills/
 
 # 2. start tracking; this vendors the file if it does not exist yet
-python3 -m cedit snapshot skills/deploy.md --from vendor/skills/deploy.md
+cedit snapshot skills/deploy.md --from vendor/skills/deploy.md
 
 # 3. adapt the working copy in your editor, then check what you did
-python3 -m cedit diff
+cedit diff
 
 # 4. commit BOTH the document and the state
 git add skills/deploy.md .cedit
@@ -802,13 +810,13 @@ The day-to-day loop:
 git -C vendor pull        # or a submodule update, or a re-copy
 
 # 2. look before you leap
-python3 -m cedit sync --from vendor --dry-run
+cedit sync --from vendor --dry-run
 
 # 3. do it
-python3 -m cedit sync --from vendor
+cedit sync --from vendor
 
 # 4. read what changed, in the language of your own adaptations
-python3 -m cedit diff
+cedit diff
 git diff skills/
 
 # 5. commit the document and the state together
@@ -822,7 +830,7 @@ nothing merged; read the message.
 In CI, the useful gate is `status`, which needs no upstream at all:
 
 ```bash
-python3 -m cedit status || echo "conflicts are open in this branch"
+cedit status || echo "conflicts are open in this branch"
 ```
 
 Exit 1 there means "a human must decide"; exit 2 means the state itself is
@@ -838,14 +846,14 @@ for zsh, and an upstream revision that touches that same fence.
 **1. The sync reports it and exits 1.**
 
 ```console
-$ python3 -m cedit sync --from vendor; echo "rc=$?"
+$ cedit sync --from vendor; echo "rc=$?"
 skills/deploy/SKILL.md: 0 edit(s) reapplied, 0 block(s) updated from upstream, 1 conflict(s)
 [CONFLICT opaque fence] #7b47884c75de548e:0
     ctx     : Preflight
     base    : bash scripts/healthcheck.sh --strict
     upstream: bash scripts/healthcheck.sh --strict --timeout 60
     local   : zsh scripts/healthcheck.sh --strict  (kept in the working file)
-    resolve : python3 -m cedit resolve skills/deploy/SKILL.md 7b47884c75de548e:0 --take local|upstream
+    resolve : cedit resolve skills/deploy/SKILL.md 7b47884c75de548e:0 --take local|upstream
 
 rc=1
 ```
@@ -857,10 +865,10 @@ recorded, not applied.
 **2. Everything is in the state, and the document is fenced off.**
 
 ```console
-$ python3 -m cedit status; echo "rc=$?"
+$ cedit status; echo "rc=$?"
 skills/deploy/SKILL.md: 1 local edit(s), 1 unresolved conflict(s); base c27422f7d48bd272 synced 2026-08-04T23:57:54Z (upstream: vendor)
 rc=1
-$ python3 -m cedit sync --from vendor; echo "rc=$?"
+$ cedit sync --from vendor; echo "rc=$?"
 skills/deploy/SKILL.md: 1 unresolved conflict(s) — resolve them before syncing again
 rc=2
 ```
@@ -888,7 +896,7 @@ spelunking:
 **3. Read all three in full.**
 
 ```bash
-python3 -m cedit resolve skills/deploy/SKILL.md 7b47884c75de548e --show
+cedit resolve skills/deploy/SKILL.md 7b47884c75de548e --show
 ```
 
 **4. Decide.** There are three real answers.
@@ -896,7 +904,7 @@ python3 -m cedit resolve skills/deploy/SKILL.md 7b47884c75de548e --show
 *Keep the adaptation* — upstream's change does not matter to you:
 
 ```console
-$ python3 -m cedit resolve skills/deploy/SKILL.md 7b47884c75de548e --take local
+$ cedit resolve skills/deploy/SKILL.md 7b47884c75de548e --take local
 skills/deploy/SKILL.md #7b47884c75de548e:0: kept local text — it is now an ordinary overlay edit against the new base
 ```
 
@@ -923,9 +931,9 @@ That is the `git rerere` move: the same conflict will not be raised twice.
 *Take upstream* — their change supersedes yours:
 
 ```console
-$ python3 -m cedit resolve skills/deploy/SKILL.md 7b47884c75de548e:0 --take upstream
+$ cedit resolve skills/deploy/SKILL.md 7b47884c75de548e:0 --take upstream
 skills/deploy/SKILL.md #7b47884c75de548e:0: upstream text taken
-$ python3 -m cedit status
+$ cedit status
 skills/deploy/SKILL.md: 0 local edit(s), 0 unresolved conflict(s); base c27422f7d48bd272 synced 2026-08-04T23:58:11Z (upstream: vendor)
 ```
 
@@ -937,9 +945,9 @@ flag), then accept what you wrote. (This run used a bare `GUIDE.md` holding the
 same conflicted fence; the shape is identical.)
 
 ```console
-$ python3 -m cedit resolve GUIDE.md 7b47884c75de548e --take local
+$ cedit resolve GUIDE.md 7b47884c75de548e --take local
 GUIDE.md #7b47884c75de548e:0: kept local text — it is now an ordinary overlay edit against the new base
-$ python3 -m cedit status
+$ cedit status
 GUIDE.md: 1 local edit(s), 0 unresolved conflict(s); base 9e36dbe0b336f3bc synced 2026-08-05T00:00:38Z (upstream: vendor)
 ```
 
@@ -962,7 +970,7 @@ hand.
 syncs again:
 
 ```console
-$ python3 -m cedit sync --from vendor
+$ cedit sync --from vendor
 skills/deploy/SKILL.md: up to date
 ```
 
@@ -973,14 +981,14 @@ git add skills .cedit && git commit -m "sync + resolve: keep the zsh preflight"
 **Orphans.** The other conflict flavour: upstream deleted a block you had edited.
 
 ```console
-$ python3 -m cedit sync --from vendor; echo "rc=$?"
+$ cedit sync --from vendor; echo "rc=$?"
 skills/deploy/SKILL.md: 0 edit(s) reapplied, 0 block(s) updated from upstream, 1 conflict(s)
 [ORPHAN unit paragraph] #2a37ee9b554dd0c8:0
     ctx     : Preflight
     base    : If it exits non-zero, stop and fix the environment first.
     upstream: (deleted)
     local   : If it exits non-zero, page the on-call engineer before doing anything else.
-    resolve : python3 -m cedit resolve skills/deploy/SKILL.md 2a37ee9b554dd0c8:0 --take local|upstream
+    resolve : cedit resolve skills/deploy/SKILL.md 2a37ee9b554dd0c8:0 --take local|upstream
 
 rc=1
 ```
@@ -1002,7 +1010,7 @@ that moved *and* changed. Concretely:
 reworded a paragraph; the local edit was a zsh rewrite of the production fence.
 
 ```console
-$ python3 -m cedit sync --from vendor
+$ cedit sync --from vendor
 RUNBOOK.md: 1 edit(s) reapplied, 0 block(s) updated from upstream, 1 inserted, 1 removed, 2 moved, no conflicts
 ```
 
@@ -1037,7 +1045,7 @@ way — upstream's text stands.
 hash:
 
 ```console
-$ python3 -m cedit sync --from vendor
+$ cedit sync --from vendor
 GUIDE.md: 0 edit(s) reapplied, 0 block(s) updated from upstream, no conflicts
 ```
 
@@ -1047,7 +1055,7 @@ structure always comes from upstream. Better still, this holds when the reflowed
 paragraph is the one you rewrote — a pure reflow is a REAPPLY, not a conflict:
 
 ```console
-$ python3 -m cedit sync --from vendor
+$ cedit sync --from vendor
 GUIDE.md: 1 edit(s) reapplied, 0 block(s) updated from upstream, no conflicts
 $ cat GUIDE.md
 # Guide
@@ -1083,7 +1091,7 @@ fence (occurrence `:1` of two identical `bash scripts/deploy.sh` fences) and
 upstream then moved the production section above staging:
 
 ```console
-$ python3 -m cedit sync --from vendor
+$ cedit sync --from vendor
 RUNBOOK.md: 2 edit(s) reapplied, 1 block(s) updated from upstream, 2 moved, no conflicts
 ```
 
@@ -1115,14 +1123,14 @@ When upstream *removes* one of the duplicates, the edit is not guessed onto a
 survivor — it degrades to an orphan conflict and you decide:
 
 ```console
-$ python3 -m cedit sync --from vendor; echo "rc=$?"
+$ cedit sync --from vendor; echo "rc=$?"
 G.md: 0 edit(s) reapplied, 0 block(s) updated from upstream, 1 inserted, 1 conflict(s)
 [ORPHAN opaque fence] #95e06da1cc708132:1
     ctx     : B
     base    : bash x.sh
     upstream: (deleted)
     local   : zsh x.sh
-    resolve : python3 -m cedit resolve G.md 95e06da1cc708132:1 --take local|upstream
+    resolve : cedit resolve G.md 95e06da1cc708132:1 --take local|upstream
 
 rc=1
 ```
@@ -1147,7 +1155,7 @@ Commit all of it. `.cedit/base/` is not a cache: it is the third revision the
 git blob to point at instead. Without it, a sync cannot run at all:
 
 ```console
-$ python3 -m cedit status
+$ cedit status
 G.md: base snapshot missing (/tmp/cedit-lost/.cedit/base/G.md) — was `.cedit/base/` committed?
 ```
 
@@ -1212,7 +1220,7 @@ edit a file, `diff` shows the edit while `overlay.json` still shows the previous
 state:
 
 ```console
-$ python3 -m cedit diff
+$ cedit diff
 skills/deploy/SKILL.md: 1 local edit(s)
 [edit opaque fence] #7b47884c75de548e:0  sim=0.93
 ...
@@ -1242,11 +1250,11 @@ deleting or moving whole blocks in your working copy is detected and reported pe
 block, and nothing is merged:
 
 ```console
-$ python3 -m cedit diff; echo "rc=$?"
+$ cedit diff; echo "rc=$?"
 skills/deploy/SKILL.md: local structural changes are not supported yet (phase 1 merges replacements only):
   inserted paragraph: We also run a smoke test afterwards.
 rc=2
-$ python3 -m cedit sync --from vendor; echo "rc=$?"
+$ cedit sync --from vendor; echo "rc=$?"
 skills/deploy/SKILL.md: local structural changes are not supported yet (phase 1 merges replacements only):
   inserted paragraph: We also run a smoke test afterwards.
 rc=2
@@ -1262,7 +1270,7 @@ syncing that document, or push the addition upstream. `diff --unified` keeps
 working throughout, so you can always see what the drift is:
 
 ```console
-$ python3 -m cedit diff --unified
+$ cedit diff --unified
 --- base/skills/deploy/SKILL.md
 +++ skills/deploy/SKILL.md
 @@ -27,3 +27,5 @@
@@ -1291,7 +1299,7 @@ ______________________________________________________________________
 **See what an upstream revision would do, without touching anything**
 
 ```bash
-python3 -m cedit sync --from vendor --dry-run
+cedit sync --from vendor --dry-run
 ```
 
 **Adopt a copy you already adapted by hand** — point `snapshot` at the upstream
@@ -1299,14 +1307,14 @@ revision it was forked from; the difference becomes your overlay, and the file i
 left untouched.
 
 ```bash
-python3 -m cedit snapshot skills/deploy.md --from vendor/skills/deploy.md
+cedit snapshot skills/deploy.md --from vendor/skills/deploy.md
 ```
 
 **Sync one document while others have open conflicts** — name it, and the rest
 are not even looked at.
 
 ```bash
-python3 -m cedit sync skills/deploy.md --from vendor
+cedit sync skills/deploy.md --from vendor
 ```
 
 **Review adaptations in a PR** — `.cedit/overlay.json` *is* the review artifact;
@@ -1314,13 +1322,13 @@ its diff is the list of what you customized. For a reviewer who wants familiar
 syntax:
 
 ```bash
-python3 -m cedit diff --unified > /tmp/adaptations.patch
+cedit diff --unified > /tmp/adaptations.patch
 ```
 
 **Gate CI on unresolved conflicts** — `status` needs no upstream and no network.
 
 ```bash
-python3 -m cedit status    # 0 clean, 1 conflicts open, 2 state broken
+cedit status    # 0 clean, 1 conflicts open, 2 state broken
 ```
 
 **Find a conflict's key without scrolling** — it is in the manifest:
@@ -1333,13 +1341,13 @@ python3 -c "import json;print(list(json.load(open('.cedit/manifest.json'))['docs
 accept the deletion:
 
 ```bash
-python3 -m cedit resolve skills/deploy.md <hash> --show
+cedit resolve skills/deploy.md <hash> --show
 ```
 
 **Experiment without disturbing committed state**
 
 ```bash
-python3 -m cedit --state-dir .cedit-scratch snapshot skills/deploy.md --from vendor/skills/deploy.md
+cedit --state-dir .cedit-scratch snapshot skills/deploy.md --from vendor/skills/deploy.md
 ```
 
 **Re-vendor from scratch** — there is no `untrack`. Delete the document's entry
@@ -1357,7 +1365,7 @@ ______________________________________________________________________
 | Symptom | Cause | Fix |
 | --- | --- | --- |
 | `nothing tracked` from a repo that *is* tracked | you are not at the repository root | `cd` to the root — state is resolved from the working directory |
-| `<doc>: not tracked — run cedit snapshot first` | typo in the path, or never snapshotted | check `python3 -m cedit status` for the exact keys |
+| `<doc>: not tracked — run cedit snapshot first` | typo in the path, or never snapshotted | check `cedit status` for the exact keys |
 | `already tracked — use cedit sync` | `snapshot` run twice | use `sync`, or re-vendor (see the cookbook) |
 | `tracked documents are addressed by a path relative to the repository root` | an absolute path or one starting `../` | pass the repo-relative path |
 | `base snapshot missing … was .cedit/base/ committed?` | `.cedit/base/` not committed, or a partial checkout | restore it from git; without B nothing can merge |

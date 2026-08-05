@@ -6,8 +6,10 @@
 #   2. tag the merge commit vX.Y.Z (pure SemVer, no sprint suffix — §5 note)
 #   3. publish the GitHub Release (= "deploy main to Production" — there's
 #      no separate deploy step for this repo)
-#   4. back-merge main -> development  (§3 Phase 4 step 6 / §4 Step 4)
-#   5. delete the release/hotfix branch (§3 Phase 4 step 7)
+#   4. bump pyproject.toml on main, then build + verify the distribution
+#   5. back-merge main -> development  (§3 Phase 4 step 6 / §4 Step 4)
+#   6. delete the release/hotfix branch (§3 Phase 4 step 7)
+#   7. upload the built sdist + wheel to PyPI
 #
 # Only fires for release/* and hotfix/* head branches — a feature PR merged
 # straight into main does NOT trigger a release (the `if:` guard below).
@@ -19,8 +21,15 @@
 # back-merge commit to re-trigger the validator workflow, set a RELEASE_PAT
 # secret and swap GH_TOKEN/GIT_AUTHOR/PAT comments below.
 #
-# This workflow bumps pyproject.toml's version field for PEP 440
-# compatibility but does NOT publish to PyPI — no publish step exists.
+# This workflow bumps pyproject.toml's version field and publishes the
+# resulting sdist + wheel to PyPI via Trusted Publishing (OIDC) — no API
+# token is stored in repository secrets. PyPI must have a *pending publisher*
+# configured for this repository and this workflow file before the first
+# release, or the publish step fails at the OIDC exchange; that is a human
+# action on pypi.org which no change in this repo can cover.
+#
+# Only real releases reach PyPI. tag-development-rc.yml's vX.Y.Z-dev.N builds
+# are deliberately not published.
 name: Release
 
 on:
@@ -31,6 +40,7 @@ on:
 permissions:
   contents: write        # create tags + GitHub Releases
   pull-requests: write  # open the sync-back PR on conflict
+  id-token: write       # OIDC token for PyPI Trusted Publishing
 
 jobs:
   release:
@@ -172,8 +182,8 @@ jobs:
           # --generate-notes derives the body from PR titles/commits since the
           # previous tag (or all history on first release). Using PR titles
           # avoids relying on Conventional-Commits merge messages and stays
-          # generic for any repo. No CD/PyPI-publish pipeline exists yet —
-          # publishing this Release IS going to production.
+          # generic for any repo. The PyPI upload happens later in this same
+          # job, from the version-bumped tree — see the two publish steps.
           if [ -n "${PREV}" ]; then
             gh release create "${NEXT}" --title "${NEXT}" \
               --generate-notes --notes-start-tag "${PREV}"
@@ -191,16 +201,63 @@ jobs:
           NEXT_NO_V="${NEXT#v}"
           # The previous steps ran on a detached merge_commit_sha; check out main.
           git checkout -B main origin/main
-          # pyproject.toml is minimal (a single `version = "..."` line under
-          # [project]), so a targeted regex substitution is simpler and safer
-          # here than pulling in a TOML-writing dependency for one field. This
-          # only keeps versioning PEP 440-compatible — it does NOT publish to
-          # PyPI.
+          # A targeted regex substitution rather than a TOML-writing
+          # dependency for one field. The pattern is anchored at column zero,
+          # and `version = ` appears exactly once that way in pyproject.toml
+          # ([build-system] uses `requires`, [project.urls] uses its own
+          # keys) — keep it that way, or this rewrites the wrong field.
+          #
+          # This step is what makes the PyPI publish below correct: the
+          # tagged merge commit still carries development's last dev stamp
+          # (e.g. 0.1.2-dev.5), so a build from *that* tree would upload a
+          # PEP 440 dev release sorting BELOW the release it just tagged —
+          # uncorrectable, because PyPI filenames are immutable. Everything
+          # downstream therefore builds from this bumped tree, never from the
+          # merge commit.
           sed -i -E 's/^version = ".*"$/version = "'"${NEXT_NO_V}"'"/' pyproject.toml
           grep -q "version = \"${NEXT_NO_V}\"" pyproject.toml
           git add pyproject.toml
           git commit -m "chore: bump version to ${NEXT_NO_V}"
           git push origin main
+
+      # The distribution is built HERE, immediately after the bump, because
+      # this is the only point in the job where the working tree carries the
+      # release version. The upload itself is the last step of the job — see
+      # the comment there for why the two are split.
+      - name: Set up Python for the build
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build sdist + wheel and verify the version
+        env:
+          NEXT: ${{ steps.version.outputs.next }}
+        run: |
+          set -euo pipefail
+          NEXT_NO_V="${NEXT#v}"
+
+          python -m pip install --upgrade pip
+          python -m pip install build twine
+          rm -rf dist build
+          python -m build
+
+          # Assert BEFORE uploading that what was built is the release that
+          # was just tagged. PyPI filenames are immutable, so an upload of
+          # the wrong version cannot be corrected by re-running — fail the
+          # job loudly instead. Expect exactly the two expected filenames and
+          # nothing else in dist/.
+          whl="dist/cedit-${NEXT_NO_V}-py3-none-any.whl"
+          sdist="dist/cedit-${NEXT_NO_V}.tar.gz"
+          count="$(find dist -maxdepth 1 -type f | wc -l)"
+          if [ "${count}" -ne 2 ] || [ ! -f "${whl}" ] || [ ! -f "${sdist}" ]; then
+            echo "::error::Built artifacts do not match the resolved release ${NEXT}. Expected exactly ${whl} and ${sdist}. dist/ holds:"
+            ls -1 dist
+            exit 1
+          fi
+
+          twine check dist/*
+          echo "artifacts verified against ${NEXT}:"
+          ls -1 dist
 
       - name: Back-merge main into development
         id: sync
@@ -249,6 +306,17 @@ jobs:
           git push origin --delete "${HEAD_REF}"
           echo "::notice::Deleted branch ${HEAD_REF}"
 
+      # Last, deliberately — dist/ is untracked so it survives the branch
+      # checkouts above unchanged. The realistic failure here is the OIDC
+      # exchange (no pending publisher configured on pypi.org yet), and that
+      # is the one failure a human fixes outside this repo. Running it last
+      # means such a failure leaves the tag, the GitHub Release, the version
+      # bump, the back-merge and the branch cleanup all already done, with
+      # only the upload left to do by hand. A genuine packaging bug still
+      # fails fast, in the build+verify step above, before any of that.
+      - name: Publish to PyPI (Trusted Publishing)
+        uses: pypa/gh-action-pypi-publish@release/v1
+
       - name: Job summary
         env:
           NEXT: ${{ steps.version.outputs.next }}
@@ -264,6 +332,7 @@ jobs:
             echo "- bump   : ${LEVEL} (from ${PREV:-<none>})"
             echo "- tag    : ${NEXT}"
             echo "- release: https://github.com/${{ github.repository }}/releases/tag/${NEXT}"
+            echo "- pypi   : https://pypi.org/project/cedit/${NEXT#v}/"
             case "${SYNCED}" in
               pushed) echo "- sync   : main -> development (pushed)" ;;
               *)      echo "- sync   : back-merge PR opened — ${SYNCED}" ;;

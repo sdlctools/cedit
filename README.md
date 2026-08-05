@@ -24,28 +24,50 @@ cedit grew out of the `markdown-localization` research repo, whose pinned
 parser and Merkle-hash diff engine are vendored — frozen — in
 [`cedit/mdcore/`](cedit/mdcore/).
 
-## Setup
+## Install
+
+```bash
+pipx install cedit   # or: pip install cedit
+cedit --help
+```
+
+That installs the `cedit` command **and** the importable package with the
+pinned parsing stack as real dependencies. The docs write `cedit
+<subcommand>` throughout; `python3 -m cedit <subcommand>` is the same entry
+point with the same arguments, and is what you want when cedit lives in a
+virtualenv you'd rather not activate.
+
+**Install cedit into an environment of its own** — that's what `pipx` above
+buys you; a dedicated virtualenv does the same. `mdcore/utils.make_parser`
+appends *every installed* mdformat parser extension, so the set of mdformat
+plugins present in the environment is part of the parser identity. Dropping
+cedit into a shared environment that already carries other mdformat plugins
+can move the hashes in your `.cedit/` state even though cedit's own pins are
+honoured — and moved hashes read as conflicts against blocks nobody touched.
+
+### Working on cedit itself
+
+Developing *cedit* rather than using it? Work from a source checkout:
 
 ```bash
 python3 -m venv venv
 venv/bin/pip install -r requirements.txt   # the parsing stack is pinned EXACTLY — see the file
-venv/bin/pip install -e .                  # so `python3 -m cedit` works from any directory (no `cedit` executable is installed)
-venv/bin/python3 -m pytest                 # 24 tests, no network
+venv/bin/pip install -e .                  # optional: only to run cedit from another repo
+venv/bin/python3 -m pytest                 # 27 tests, no network
 ```
 
 ## Quickstart
 
-Activate the venv (`source venv/bin/activate`), then run from the root of
-the repository holding your vendored copies — a *different* repo than this
-one, which is what the editable install above is for. State lives in
-`.cedit/` (commit it — the base snapshots *are* the merge's memory).
+Run from the root of the repository holding your vendored copies — a
+*different* repo than this one. State lives in `.cedit/` (commit it — the
+base snapshots *are* the merge's memory).
 
 ```bash
 # 1. start tracking (vendors the file if it doesn't exist yet)
-python3 -m cedit snapshot skills/SKILL.md --from vendor/skills/SKILL.md
+cedit snapshot skills/SKILL.md --from vendor/skills/SKILL.md
 
 # 2. adapt the file in place — e.g. rewrite bash fences for zsh — then:
-python3 -m cedit diff
+cedit diff
 # [edit opaque fence] #c564262de9cbba0f:0  sim=0.98
 #     ctx  : 1. Discovery and healthcheck
 #     base : bash "${CLAUDE_PLUGIN_ROOT}/.../ensure_local_env.sh" || exit 1
@@ -53,7 +75,7 @@ python3 -m cedit diff
 
 # 3. upstream evolved — merge it in (your edits re-apply, even across moves
 #    and reflows; upstream changes to blocks you didn't touch flow in)
-python3 -m cedit sync --from vendor
+cedit sync --from vendor
 # skills/SKILL.md: 1 edit(s) reapplied, 1 block(s) updated from upstream, 1 conflict(s)
 # [CONFLICT opaque fence] #c564262de9cbba0f:0
 #     base    : bash ".../ensure_local_env.sh" || exit 1
@@ -61,11 +83,11 @@ python3 -m cedit sync --from vendor
 #     local   : zsh ".../ensure_local_env.sh" || exit 1  (kept in the working file)
 
 # 4. a conflict means upstream changed the very block you adapted — decide:
-python3 -m cedit resolve skills/SKILL.md c564262de9cbba0f --show           # all three versions
-python3 -m cedit resolve skills/SKILL.md c564262de9cbba0f --take local    # keep the adaptation
-python3 -m cedit resolve skills/SKILL.md c564262de9cbba0f --take upstream # take upstream's text
+cedit resolve skills/SKILL.md c564262de9cbba0f --show           # all three versions
+cedit resolve skills/SKILL.md c564262de9cbba0f --take local    # keep the adaptation
+cedit resolve skills/SKILL.md c564262de9cbba0f --take upstream # take upstream's text
 
-python3 -m cedit status
+cedit status
 # skills/SKILL.md: 2 local edit(s), 0 unresolved conflict(s); base 92b023942934d656 ...
 ```
 
@@ -99,4 +121,5 @@ in [USERGUIDE.md](USERGUIDE.md).
 | `cedit/state.py` | `.cedit/` — base snapshots, manifest (+ conflicts), overlay |
 | `cedit/store.py` | atomic writes: temp file + `rename(2)`, so a crash never leaves half-written state |
 | `cedit/mdcore/` | **vendored, frozen**: pinned parser + tree_diff from markdown-localization |
-| `tests/` | merge matrix + end-to-end CLI lifecycle |
+| `tests/` | merge matrix + end-to-end CLI lifecycle + packaging metadata |
+| `pyproject.toml` | packaging metadata: the exact runtime pins, the `cedit` console script, explicit package discovery |
