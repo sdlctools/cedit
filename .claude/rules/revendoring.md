@@ -28,8 +28,10 @@ Where the other documents stop:
 
 ## What is vendored, and from where
 
-Upstream is the markdown-localization research repo,
-`git@github.com:kantorv/markdown-localization.git`. Two files come from it:
+Upstream is the markdown-localization research repo — the same one
+`requirements.txt`, SPEC.md and the `mdcore/` docstrings name. Anyone
+performing a re-vendoring has a checkout of it; this file assumes one rather
+than pinning a clone URL that would rot. Two files come from it:
 
 | Vendored file | Upstream source | Relationship |
 | --- | --- | --- |
