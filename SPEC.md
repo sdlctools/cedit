@@ -62,9 +62,27 @@ re-applies at the unit's new position. Reflow and formatting churn cost
 nothing either — canonicalization runs before every hash, and is exactly as
 load-bearing as the hashing itself.
 
-## Edit units = translation units **plus opaque blocks**
+## Edit blocks = inline units **plus opaque blocks**
 
-`tree_diff` segments a document into *translation units* — the prose-bearing
+**The vocabulary, mapped once.** `mdcore/` was vendored from a Markdown
+*localization* research project, where translating a document was the
+product, and its identifiers and comments still carry that idiom. The names
+stay — renaming inside `mdcore/` is the refactor *Reuse rules* forbids, and
+every hash a consumer recorded is keyed to that code — so the mapping is
+written down here, once, and the code points at it instead of re-deriving it:
+
+| there | here | what it is in cedit |
+| --- | --- | --- |
+| *translation unit* (`UNIT_PARENTS`, `is_unit`) | **inline unit** | a `heading` / `paragraph` / `th` / `td` — a node owning an `inline` child, whose inline source is the text a local adaptation rewrites |
+| *fuzzy match* (`FUZZY_THRESHOLD`) | **moved-and-edited pairing** | one block recognised in another that upstream both relocated and rewrote |
+| *translation memory* reuse | **re-applying an overlay** | splicing a recorded local edit onto the block it belongs to in the incoming revision |
+
+The concepts survive the move because both problems are the same one — decide
+which block of the new document *is* which block of the old, then act per
+block. What differs is the act: translating a segment, versus re-applying an
+adaptation to it.
+
+`tree_diff` segments a document into those inline units — the prose-bearing
 blocks. The critical difference for editing: the motivating edit is a **code
 fence**, and in `tree_diff` fences, raw HTML and front matter are *opaque* —
 hashed, so a change to one is noticed, but never inline units. For cedit the
@@ -81,11 +99,14 @@ whole front-matter block, and an upstream front-matter change is then a
 conflict on the whole block. Acceptable for the POC; splitting front matter
 per key is future work.
 
-**Duplicate hashes.** Unlike translation ("same source ⇒ same
-translation"), a user may edit only the *third* occurrence of a repeated
-command. Overlay keys are therefore `(hash, occurrence_index)` in document
-order. If the occurrence count of an edited hash changes upstream, that
-edit degrades to a conflict rather than guessing.
+**Duplicate hashes.** Two byte-identical blocks stay distinct: a user may
+have adapted only the *third* copy of a repeated command, and re-applying
+that edit to all three would be wrong. (This is one place the vendored
+engine's assumption does not carry over — "same source ⇒ same translation"
+holds for translating, not for adapting.) Overlay keys are therefore
+`(hash, occurrence_index)` in document order. If the occurrence count of an
+edited hash changes upstream, that edit degrades to a conflict rather than
+guessing.
 
 ## The merge matrix
 

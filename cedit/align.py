@@ -94,9 +94,9 @@ def align(base: list[Block], other: list[Block]) -> tuple[list[Fate], list[Block
             # A 1-for-1 replacement of like with like is an edit regardless of
             # text similarity: `a` → `a-adapted` in a table cell scores 0.18,
             # but positional evidence is conclusive when the window holds
-            # exactly one block on each side. (Translation never needed this —
-            # a mis-split there just retranslates; here it would misread an
-            # edit as structural drift.)
+            # exactly one block on each side. Calling it unrelated instead
+            # would report a delete plus an insert — structural drift, which
+            # phase 1 rejects — where the user only rewrote a cell.
             if (i2 - i1, j2 - j1) == (1, 1) and i1 not in paired_i:
                 a, b = base[i1], other[j1]
                 if a.kind == b.kind and a.node_type == b.node_type:
@@ -123,8 +123,8 @@ def align(base: list[Block], other: list[Block]) -> tuple[list[Fate], list[Block
         else:
             still_deleted.append(i)
 
-    # Global fuzzy pass: moved *and* edited — the CAT-tool fuzzy match, at
-    # block granularity.
+    # Global fuzzy pass: a block upstream moved *and* edited — the one case no
+    # single window can see. "Fuzzy" in `FUZZY_THRESHOLD`'s CAT-tool sense.
     leftover_ins = [j for j in remaining_ins if j not in used_other]
     scored = sorted(
         ((_sim(base[i], other[j]), i, j)
