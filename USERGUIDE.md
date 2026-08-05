@@ -9,6 +9,8 @@ overview, [README.md](README.md).
 Every command and every block of output below was run for real — against this
 repository or a throwaway directory — and pasted unedited.
 
+![cedit compares document ASTs and tracks the changes between them](assets/ast-trees-comparison-and-changes-tracking.png)
+
 **Contents**
 
 1. [The mental model](#1-the-mental-model)
@@ -98,7 +100,7 @@ Working on cedit itself rather than using it? Install from a clone instead:
 python3 -m venv venv
 venv/bin/pip install -r requirements.txt   # the parsing stack, pinned EXACTLY
 venv/bin/pip install -e .                  # puts `cedit` on the venv's path
-venv/bin/python3 -m pytest                 # 27 tests, no network, <1s
+venv/bin/python3 -m pytest                 # 31 tests, no network, <1s
 ```
 
 **The pins are load-bearing.** `requirements.txt` pins `markdown-it-py`,
@@ -661,10 +663,10 @@ kinds, and both diff, overlay and merge identically:
 | `unit` | `heading`, `paragraph`, `th`, `td` | the inline source of the block |
 | `opaque` | `fence`, `code_block`, `html_block`, `front_matter`, `hr` | the token's own content (plus the fence info string) |
 
-The `unit` set is exactly the localization pipeline's translation units. The
-`opaque` set is cedit's addition: in a translation pipeline a code fence is never
-translated, so it is just copied — here it is the *motivating* edit, so it is a
-first-class block with its own identity.
+The `unit` set is exactly `tree_diff`'s translation units. The `opaque` set is
+cedit's addition: to a translator a code fence is never translated, so it is
+just copied — here it is the *motivating* edit, so it is a first-class block
+with its own identity.
 
 **Identity is a hash.** Each block carries the 16-hex-char Merkle hash the
 vendored `tree_diff.hash_tree` assigns over the canonicalized document.
@@ -1511,4 +1513,5 @@ so diffs stay local and reviewable.
 | --- | --- |
 | [README.md](README.md) | the two-minute version: setup, quickstart, layout |
 | [SPEC.md](SPEC.md) | the normative design — merge matrix, sync algorithm, state format, reuse rules, phases |
-| [AGENTS.md](AGENTS.md) | working on cedit itself: architecture, invariants, repo workflow |
+| [AGENTS.md](AGENTS.md) | working on cedit itself: orientation, invariants, repo workflow |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | the implementation module by module, and the recipes for extending it |

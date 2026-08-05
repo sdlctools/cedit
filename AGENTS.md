@@ -9,15 +9,22 @@ Depth lives elsewhere: [README.md](README.md) is the user-facing usage
 task-oriented how-to (command reference, flows, conflict lifecycle,
 troubleshooting), [SPEC.md](SPEC.md) is the normative design (merge matrix,
 sync algorithm, state format, reuse rules, phases), and
-[.claude/rules/cedit-source-map.md](.claude/rules/cedit-source-map.md) is the
-code-level map of the implementation (every module's functions, dataclasses
-and constants, the call graph, where each invariant below is enforced) —
-read it before changing code.
+[ARCHITECTURE.md](ARCHITECTURE.md) is the code-level map of the
+implementation (every module's functions, dataclasses and constants, the
+call graph, where each invariant below is enforced, and the change recipes
+plus hash blast radius for extending it) — **read it before changing
+code.**
 [.claude/rules/release-pipeline.md](.claude/rules/release-pipeline.md) does
 the same for the three versioning workflows (dev builds, release cut,
 release) — read it before touching `.github/workflows/` or cutting a
-release. This file is the orientation and the rules — it does not restate
-any of them.
+release, and
+[.claude/rules/manual-release.md](.claude/rules/manual-release.md) is the
+by-hand runbook for the releases that automation cannot finish (any release
+that changes a workflow file). [.claude/rules/hash-stability.md](.claude/rules/hash-stability.md)
+is the runbook for invariants 1 and 2 below: changing the parser, the diff
+engine or the pins without silently moving every hash in every consumer's
+state, and the drift check that proves you did not. This file is the
+orientation and the rules — it does not restate any of them.
 
 ## What this is
 
@@ -35,7 +42,7 @@ precise, per-block conflict when upstream touched the same block you did.
 python3 -m venv venv
 venv/bin/pip install -r requirements.txt   # the parsing stack is pinned EXACTLY — see below
 venv/bin/pip install -e .                  # only needed to run cedit from another repo, not for tests
-venv/bin/python3 -m pytest                 # 27 tests, no network, <1s
+venv/bin/python3 -m pytest                 # 31 tests, no network, <1s
 venv/bin/python3 -m pytest tests/test_merge3.py -k reapply   # one test / one file
 venv/bin/python3 -m cedit --help           # the CLI
 ```
@@ -74,9 +81,9 @@ before touching either.
 | `cedit/blocks.py` | block extraction (inline units + opaque blocks), splicing, render-and-verify |
 | `cedit/state.py` | `.cedit/` — base snapshots, manifest (+ conflicts), derived overlay |
 | `cedit/store.py` | atomic writes: temp file in the target dir + `rename(2)` |
-| `cedit/mdcore/` | **vendored, frozen** from markdown-localization: `utils` (pinned parser), `tree_diff` (hashing, segmentation, similarity) |
+| `cedit/mdcore/` | **frozen**: `utils` (the pinned parser), `tree_diff` (hashing, segmentation, similarity) — every recorded hash is a function of these |
 | `cedit/__main__.py` | `python3 -m cedit` entry — delegates to `cli.main` |
-| `tests/` | `test_merge3.py` (the merge matrix), `test_cli.py` (end-to-end lifecycle), `test_packaging.py` (version resolution + pin drift) |
+| `tests/` | `test_merge3.py` (the merge matrix), `test_cli.py` (end-to-end lifecycle), `test_packaging.py` (version resolution, pin drift, README link absoluteness), `test_parser_contract.py` (the drift check — invariant 2, enforced) |
 
 A `sync` flows in one direction: **parse** B (base), L (local working copy)
 and U (incoming upstream) into block sequences → **align** L against B (the
@@ -88,19 +95,25 @@ first, then `.cedit/` state.
 
 ## Invariants — do not violate these
 
-1. **`cedit/mdcore/` is vendored and frozen.** It is a copy of the
-   markdown-localization repo's parser and diff engine. Do not refactor,
-   reformat or "improve" it: a change to hashing or segmentation moves every
-   hash already recorded in consumers' `.cedit/` state. Changes belong
-   upstream and arrive here as a re-vendoring. See *Reuse rules* in SPEC.md.
+1. **`cedit/mdcore/` is frozen.** It holds the parser (`utils`) and the
+   hashing/segmentation engine (`tree_diff`), and every hash in every
+   consumer's `.cedit/` state is a function of them. Do not refactor,
+   reformat or "improve" it: a change to canonicalisation, hashing or
+   segmentation moves hashes recorded on machines you will never see, and
+   turns their next sync into a wall of false conflicts against blocks
+   nobody touched. Deliberate changes are possible — they go through
+   [.claude/rules/hash-stability.md](.claude/rules/hash-stability.md). See
+   also *Reuse rules* in SPEC.md.
 
 2. **The parsing stack in `requirements.txt` is pinned exactly on purpose.**
    Every hash in `.cedit/` state — base doc hashes, overlay keys, conflict
    keys — is taken over the one parser configuration in
-   `mdcore/utils.make_parser`, which *is* those packages. A minor upgrade can
-   change what the parser emits, silently moving every hash and turning the
-   next sync into a wall of false conflicts. Upgrade one pin at a time and
-   run the suite.
+   `mdcore/utils.make_parser`, which *is* those packages, **plus whatever
+   mdformat plugins are installed** — `make_parser` appends every one it
+   finds, so an unrelated `pip install` can move every hash. A minor upgrade
+   can change what the parser emits just as silently. Upgrade one pin at a
+   time and run `venv/bin/python3 tests/parser_contract.py`; the rest of the
+   suite cannot see a consistent hash move.
 
 3. **Conflict handling is explicit, never a silent clobber.** On conflict the
    working file keeps the **local** text and all three versions (base,
@@ -130,5 +143,24 @@ the jira-sdlc skills, not by hand**; each carries a
 subjects lead with the Jira key (`CED-7 Add ...`).
 
 `.github/workflows/` holds gitflow release automation, Jira transition on
-merge, and the AI PR reviewer. **There is no CI test job** — the local
-`venv/bin/python3 -m pytest` run is the gate. Run it before every commit.
+merge, the AI PR reviewer, and `tests.yml` — the suite on Python 3.10, 3.11,
+3.12, 3.13 and 3.14, installed from `requirements.txt`, on every push to
+`development`/`main` and every pull request, plus an advisory 3.15 leg that
+reports but cannot fail the job.
+
+**The matrix, the classifiers and `requires-python` are one list.** Claiming a
+version no leg runs is the defect `tests.yml` was added to close, so change
+all three in the same commit —
+`tests/test_packaging.py::test_supported_pythons_are_the_tested_pythons`
+fails if they drift. Advisory legs are excluded from that check by design:
+they are not claimed support.
+
+**`tests.yml` gates nothing.** It is not a required status check, on purpose:
+a PR whose head commit carries `[skip ci]` emits *no* workflow runs at all
+(invariant 1 in
+[.claude/rules/release-pipeline.md](.claude/rules/release-pipeline.md)), so a
+required check would never report and the PR would be permanently
+unmergeable. Nor does it cover what a maintainer's machine does — it runs on
+Linux only. **The local `venv/bin/python3 -m pytest` run is still the gate.
+Run it before every commit;** CI's job is the version matrix you cannot run
+locally.

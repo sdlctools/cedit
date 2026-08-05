@@ -1,0 +1,122 @@
+# Runs the pytest suite across every Python version the package's metadata
+# claims to support — `requires-python = ">=3.10"` plus the 3.10 … 3.14
+# classifiers in pyproject.toml. Before this workflow existed the suite had
+# only ever run on a maintainer's local interpreter, so that claim was
+# unverified: a consumer could install a package pip considers compatible and
+# hit an error at import.
+#
+# 3.10 is the floor on purpose. It is the system interpreter on Ubuntu 22.04,
+# 3.11 is Debian 12's, and cedit is a developer tool that gets installed on
+# whatever Python a machine already has. Supporting them costs two matrix
+# legs; dropping them would cost those users every future release.
+#
+# The two lists are one list. Adding a classifier without adding the matching
+# matrix leg re-creates exactly the gap this workflow closed, and raising
+# requires-python without dropping the leg leaves a version tested but not
+# offered. Change them in the same commit, always.
+#
+# 3.15 rides along as an advisory leg: it is not in the metadata, it is not
+# in requires-python, and `continue-on-error` means it cannot fail the job.
+# It exists so the next Python lands as a warning weeks early rather than as
+# a surprise on release day — promote it to a real leg (and a classifier)
+# once 3.15 is final and green.
+#
+# Dependencies come from requirements.txt, never from a resolver's choice.
+# The parsing stack is pinned EXACTLY on purpose (invariant 2 in AGENTS.md):
+# every hash in a consumer's `.cedit/` state is taken over the one parser
+# configuration in `cedit/mdcore/utils.make_parser`, which *is* those
+# packages. Testing against anything else would defeat the guarantee the
+# pins exist to provide.
+#
+# A leg failing on the oldest supported version is this job doing its work,
+# not a broken workflow. The fix is then to fix the code, or to raise
+# requires-python and the classifiers — a metadata change that takes effect
+# on the next release.
+#
+# DO NOT make this a required status check without reading invariant 1 in
+# .claude/rules/release-pipeline.md first. GitHub reads `[skip ci]` off the
+# HEAD commit of the pull_request event, and tag-development-rc.yml stamps
+# that marker on `development`'s tip. A PR whose head tip carries it emits no
+# workflow runs at all — a required check would then never report (rather
+# than fail), leaving the PR permanently unmergeable. cut-release.yml's empty
+# "chore: cut" commit clears the marker for release branches and feature
+# branches always carry their own commits, so the exposure is narrow — but it
+# is real, and it is why this job gates nothing today.
+name: Tests
+
+on:
+  # The long-lived branches on push; everything else reaches this job as a
+  # pull request, which is where the result is actually read.
+  push:
+    branches:
+      - development
+      - main
+  pull_request:
+
+# Invariant 4: every workflow declares its own permissions block — the
+# repository default for GITHUB_TOKEN is read, and nothing here should rely
+# on that default. This job only reads the checkout.
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    name: pytest (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    # Advisory legs report but never fail the job — see the header. Supported
+    # legs leave this false and gate normally.
+    continue-on-error: ${{ matrix.advisory || false }}
+    strategy:
+      # One leg failing must not cancel the others: "broken on 3.10, fine on
+      # 3.14" is exactly the answer this matrix exists to give.
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        include:
+          # Not yet released; allow-prereleases below is what lets
+          # setup-python resolve it at all.
+          - python-version: "3.15"
+            advisory: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install the pinned parsing stack
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Report the resolved environment
+        run: |
+          python --version
+          python -m pip freeze
+
+      - name: Run the test suite
+        # The root conftest.py puts the repository on sys.path, so the suite
+        # runs against the source tree — no install needed, and none has
+        # happened yet at this point.
+        run: python -m pytest -v
+
+      - name: Install the package and check the console script resolves
+        # --no-deps on purpose: requirements.txt already installed the exact
+        # parsing stack above, and this step must not hand the resolver a
+        # second chance to pick different versions. pyproject.toml's pins are
+        # identical by construction — tests/test_packaging.py fails if the two
+        # files ever drift apart.
+        run: |
+          python -m pip install --no-deps .
+          cedit --help
+          python -m cedit --help

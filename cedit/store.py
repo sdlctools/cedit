@@ -1,7 +1,6 @@
-"""Durable-write primitives — the same discipline as the l10n pipeline's
-`cl10n/l10n_store.py`: every state file is written via a temp file in the
-target directory plus `rename(2)`, so a reader never observes a half-written
-file and a crash leaves the previous good version in place.
+"""Durable-write primitives: every state file is written via a temp file in
+the target directory plus `rename(2)`, so a reader never observes a
+half-written file and a crash leaves the previous good version in place.
 """
 
 from __future__ import annotations

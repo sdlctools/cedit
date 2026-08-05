@@ -14,12 +14,20 @@
 # Only fires for release/* and hotfix/* head branches — a feature PR merged
 # straight into main does NOT trigger a release (the `if:` guard below).
 #
-# Auth: the default GITHUB_TOKEN works while main/development are unprotected
-# (branch protection status could not be verified with the current PAT scope
-# at implementation time — flag it if these push/tag steps start failing with
-# permission errors). If branch protection is later enabled, or you want the
-# back-merge commit to re-trigger the validator workflow, set a RELEASE_PAT
-# secret and swap GH_TOKEN/GIT_AUTHOR/PAT comments below.
+# Auth: main/development are protected by the "direct-commit-protect-main"
+# ruleset (PR-only, no force-push/deletion), with the repo's Write role in
+# its bypass list — that is what lets this job's default GITHUB_TOKEN push
+# the version-bump commit and the back-merge straight to those branches.
+#
+# One case this job CANNOT complete: if the release changed a file under
+# .github/workflows/, the back-merge commit updates one, and GitHub rejects
+# the push ("refusing to allow a GitHub App to create or update workflow
+# ... without `workflows` permission"). That is not a missing line in the
+# permissions: block below — `workflows` is not a valid GITHUB_TOKEN
+# permission key at all, and adding one makes this file fail validation so
+# the workflow stops running entirely. Finish such a release by hand:
+# see .claude/rules/manual-release.md. (A RELEASE_PAT with the `workflow`
+# scope would also work, at the cost of a long-lived token in CI.)
 #
 # This workflow bumps pyproject.toml's version field and publishes the
 # resulting sdist + wheel to PyPI via Trusted Publishing (OIDC) — no API
@@ -56,7 +64,7 @@ jobs:
       )
     steps:
       - name: Checkout merge commit (full history + tags)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.merge_commit_sha }}
           fetch-depth: 0
@@ -225,7 +233,7 @@ jobs:
       # release version. The upload itself is the last step of the job — see
       # the comment there for why the two are split.
       - name: Set up Python for the build
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 

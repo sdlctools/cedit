@@ -7,7 +7,7 @@ what, who owns the version number at each step, and the failure modes that
 are not obvious from reading the YAML.
 
 **This file is a reference, not an instruction set.** Like
-[cedit-source-map.md](cedit-source-map.md) it is deliberately not
+[ARCHITECTURE.md](../../ARCHITECTURE.md) it is deliberately not
 `@`-imported by `AGENTS.md` — read it when you are about to touch
 `.github/workflows/`, cut a release, or explain why a release did not
 happen.
@@ -17,7 +17,9 @@ Where the other documents stop:
 | Document | Answers |
 | --- | --- |
 | [AGENTS.md](../../AGENTS.md) | branch naming, Jira keys, gitflow parents, the local pytest gate |
+| [ARCHITECTURE.md](../../ARCHITECTURE.md) | the implementation, and what to touch to change it |
 | the SDLC policy | *why* the phases exist (feature freeze, QA on the branch, hotfix path) |
+| [manual-release.md](manual-release.md) | how to drive the same release by hand when the automation cannot finish |
 | **this file** | what the automation actually does, and how it breaks |
 
 ## The version space
@@ -116,6 +118,16 @@ Corollaries:
 - If `[skip ci]` is ever removed from `tag-development-rc.yml`, the cut
   commit may go too — but not before, and the two comments cross-reference
   each other for that reason.
+- **`tests.yml` must not become a required status check** while the marker
+  is in play. It is not one of the three versioning workflows and touches
+  nothing here, but it is subject to the same suppression: a required check
+  on a PR that emits no runs never *fails*, it never *reports*, which
+  branch protection treats as pending forever — an unmergeable PR with no
+  failed run to point at. The exposure is narrow (feature branches carry
+  their own commits, and the cut commit clears the marker for release
+  branches), but "narrow" and "safe" are not the same thing. The workflow's
+  own header comment says this too, so whoever flips the setting reads it
+  from either end.
 
 ### 2. Pushes made by `GITHUB_TOKEN` do not trigger workflows
 
@@ -192,6 +204,7 @@ matching.
 | `gh pr create`: *No commits between …* | `main` already contains everything on the cut branch | the `chore: cut` commit prevents this; if seen, the commit was removed |
 | `Release` fails: *Tag … already exists* | the same version was released, or a tag was pushed by hand | do not overwrite; re-cut at the next version |
 | Back-merge opened a PR instead of pushing | `main` and `development` diverged | resolve the sync PR by hand — never force-push `development` |
+| `Release` fails at *Back-merge*: *refusing to allow a GitHub App to create or update workflow … without `workflows` permission* | the release changed a file under `.github/workflows/`, and `GITHUB_TOKEN` **cannot** hold that scope — it is not a valid `permissions:` key, and adding one breaks the file's validation | not fixable in CI: finish the release by hand from the back-merge onward — [manual-release.md](manual-release.md) |
 | No `vX.Y.Z-dev.1` after a release | invariant 2, not a bug | it appears on the next push to `development` |
 | `Release` fails at *Publish to PyPI*, everything else done | no pending publisher on pypi.org for this repo + workflow, or the OIDC exchange was refused | configure the Trusted Publisher, then upload `dist/` by hand from a checkout of `main` (which carries the bumped version) — do **not** re-run the job, the tag step would fail |
 | `Release` fails at *Build sdist + wheel and verify* | the built version does not match the tag — the build ran against a tree that was not bumped (invariant 6) | fix the step order; nothing was uploaded, so the version is not burned |

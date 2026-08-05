@@ -4,9 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cedit"
-version = "0.1.6"
+version = "0.1.6-dev.7"
 description = "Continuous editing of vendored Markdown via 3-way structural merge"
 readme = "README.md"
+# 3.10 is the oldest supported version, and every version from here up is
+# exercised by .github/workflows/tests.yml. That is the rule: the floor and
+# the matrix move together, in either direction, never one without the
+# other. Claiming a version nothing runs is how a consumer ends up
+# installing a package pip considers compatible and hitting an error at
+# import; testing a version the metadata does not offer is wasted CI.
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -23,6 +29,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Version Control",
     "Topic :: Text Processing :: Markup :: Markdown",
 ]

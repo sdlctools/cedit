@@ -1,11 +1,11 @@
-"""The pinned parser configuration — VENDORED from markdown-localization
-`app/utils.py`, trimmed to the four functions cedit uses.
+"""The pinned parser configuration — the contract every hash is taken over.
 
 One `make_parser` because every consumer must agree: snapshots are hashed
 over what this parses, and the merge re-parses spliced inline content with
-the *same* rules (`parse_inline`). Two copies of this setup drifting apart
-would change token streams under recorded hashes — which is also why
-`requirements.txt` pins the whole parsing stack exactly.
+the *same* rules (`parse_inline`). A second configuration drifting from this
+one would change token streams under recorded hashes — which is also why
+`requirements.txt` pins the whole parsing stack exactly, and why
+`tests/parser_contract.py` records what this function produces.
 """
 
 from markdown_it import MarkdownIt
