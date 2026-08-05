@@ -72,8 +72,7 @@ editable set is therefore the union:
 
 - **inline units** (heading / paragraph / th / td) — keyed by unit hash;
 - **opaque blocks** (fence / html\_block / front matter) — keyed by their
-  own content hash, which `hash_tree` gives them like any other node; the
-  manifest's `opaque_hashes` list is the precedent.
+  own content hash, which `hash_tree` gives them like any other node.
 
 Both kinds diff, overlay, and merge identically; only the splice differs
 (inline content vs. whole-token replacement). Granularity caveat: an opaque
