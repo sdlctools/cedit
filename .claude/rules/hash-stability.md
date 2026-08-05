@@ -40,14 +40,14 @@ snapshots, overlay keys and conflict keys in every consumer's repository are
 keyed to exactly this code and exactly these pins. Change it and their
 recorded state stops describing their documents.
 
-A large part of `tree_diff.py` is not called by cedit at all: `plan` and
-`WorkItem`, `diff_trees` with `_diff_node` / `_diff_children` /
-`_align_window` / `_detect_moves` and `Op` / `KINDS`, `similarity`,
-`tm_keys`, `_placeholders`, `_units_under`, `_opaque_under`, `_fuzzy_pair`,
-`NON_TRANSLATABLE_INLINE`. ARCHITECTURE.md lists it symbol by symbol. It is
-dead code kept for continuity, and removing it would be hash-neutral — but
-that is its own decision, taken deliberately with the drift check green
-before and after, not a tidy-up folded into another change.
+Every top-level symbol in `tree_diff.py` is now reached from cedit. Roughly
+half the module used not to be — a translation-planning surface it was
+vendored with, kept for continuity while re-vendoring was still on the
+table. CED-19 deleted it once CED-10 had removed that reason, as its own
+change with the drift check green on both sides rather than as a tidy-up
+folded into another. That is the shape any further deletion here takes: the
+"deleting an uncalled symbol" row below is inert, but only a run of the
+check makes it evidence.
 
 ## What moves a hash
 
