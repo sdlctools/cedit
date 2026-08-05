@@ -8,9 +8,11 @@ but your environment runs `zsh`? Rewrite the fences once — every later
 you precisely (per block, with all three versions) when upstream touched
 the same thing you did.
 
-Design: [SPEC.md](SPEC.md). Grown out of the `markdown-localization`
-research repo, whose pinned parser and Merkle-hash diff engine are vendored
-in [`cedit/mdcore/`](cedit/mdcore/).
+How to drive it: [USERGUIDE.md](USERGUIDE.md) — the full guide, with a
+five-minute tour, a per-flag command reference, worked conflict resolutions
+and troubleshooting. Design: [SPEC.md](SPEC.md). Grown out of the
+`markdown-localization` research repo, whose pinned parser and Merkle-hash
+diff engine are vendored in [`cedit/mdcore/`](cedit/mdcore/).
 
 ## Setup
 
@@ -61,6 +63,10 @@ Exit codes: `0` clean, `1` unresolved conflicts, `2` errors. A document
 with open conflicts refuses to sync again until they're resolved, and the
 working file always keeps *your* text on a conflict — resolution is
 explicit, never a silent clobber.
+
+Everything above in depth — every flag, every output line, the conflict
+lifecycle end to end, the `.cedit/` layout and a troubleshooting table — is
+in [USERGUIDE.md](USERGUIDE.md).
 
 ## What it will not do (yet)
 
