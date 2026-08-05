@@ -56,7 +56,7 @@ jobs:
       )
     steps:
       - name: Checkout merge commit (full history + tags)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.merge_commit_sha }}
           fetch-depth: 0
@@ -225,7 +225,7 @@ jobs:
       # release version. The upload itself is the last step of the job — see
       # the comment there for why the two are split.
       - name: Set up Python for the build
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 

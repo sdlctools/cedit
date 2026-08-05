@@ -9,6 +9,8 @@ overview, [README.md](README.md).
 Every command and every block of output below was run for real — against this
 repository or a throwaway directory — and pasted unedited.
 
+![cedit compares document ASTs and tracks the changes between them](assets/ast-trees-comparison-and-changes-tracking.png)
+
 **Contents**
 
 1. [The mental model](#1-the-mental-model)
