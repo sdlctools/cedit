@@ -739,22 +739,18 @@ $ echo $?
 file argument defaults to stdin, where there is nothing to rewrite in place
 ([§15](#15-troubleshooting)).
 
-All three modes also warn on stderr about `$...$` math the round-trip would
-rewrite, which is why `--check` is the CI gate for it — stdout stays the
+`$...$` math survives all three modes byte for byte, so a document whose only
+unusual feature is a `$\rightarrow$` is simply canonical — stdout stays the
 canonical bytes and nothing else:
 
 ```console
 $ cedit md canonicalize --check docs/GH-CLI.md
-docs/GH-CLI.md: warning: 1 dollar-delimited math span(s) contain a backslash
-    line 12: $\rightarrow$
-    canonicalisation escapes it ($\x -> $\\x) and GitHub reads \\ inside math as a line break, so the rendered maths changes.
-    Use a ```math fence for display math, and the Unicode character or a code span inline (USERGUIDE.md §13).
-docs/GH-CLI.md: not canonical
 $ echo $?
-1
+0
 ```
 
-See [§13](#13-limits-stated-plainly) for what to write instead.
+See [§13](#13-limits-stated-plainly) for the one construct that is still
+rewritten, and what to write instead of it.
 
 #### `md blocks`
 
@@ -1661,45 +1657,68 @@ $ cedit diff --unified
 +We also run a smoke test afterwards.
 ```
 
-**`$...$` LaTeX math is not supported — and cedit says so.** GitHub renders
-`$...$` and `$$...$$` as math. cedit's parser does not know that syntax, so to
-it the dollars are ordinary text — which is harmless until the span contains a
-**backslash**. `$\rightarrow$` canonicalises to `$\\rightarrow$`, a correct
-CommonMark escape of a literal backslash and a *line break* inside GitHub's
-math. The page renders differently, and nothing downstream can notice: the
-block structure is unchanged, so render-and-verify passes, and every hash is
-taken over the already-rewritten text.
+**`$...$` LaTeX math is not *parsed* as math — but it is preserved byte for
+byte.** GitHub renders `$...$` and `$$...$$` as math. cedit's parser does not
+know that syntax, so to it the dollars are ordinary text — which would be
+harmless until the span contains a **backslash**. Left alone, `$\rightarrow$`
+canonicalises to `$\\rightarrow$`, a correct CommonMark escape of a literal
+backslash and a *line break* inside GitHub's math; the page renders
+differently, and nothing downstream could notice, because the block structure
+is unchanged and every hash would be taken over the already-rewritten text.
 
-So cedit warns, on stderr, wherever it is about to write canonicalised bytes —
-`snapshot`, `sync`, `resolve --take upstream` and `md canonicalize`:
+cedit does not leave it alone. Before a document is parsed, every such span is
+swapped for an inert placeholder, and the original bytes go back into the
+output afterwards — so the round-trip cannot touch it. That holds on every path
+that writes: `snapshot`, `sync`, `resolve --take upstream` and
+`md canonicalize` (including `-i`).
 
 ```console
+$ cat docs/GH-CLI.md
+2. Navigate to **Actions** $\rightarrow$ **General**.
+$ cedit md canonicalize -i docs/GH-CLI.md; echo "rc=$?"
+docs/GH-CLI.md: already canonical
+rc=0
 $ cedit sync --from vendor; echo "rc=$?"
-vendor/docs/GH-CLI.md: warning: 2 dollar-delimited math span(s) contain a backslash
-    line 12: $\rightarrow$
-    line 30: $$ \frac{a}{b} $$
-    canonicalisation escapes it ($\x -> $\\x) and GitHub reads \\ inside math as a line break, so the rendered maths changes.
-    Use a ```math fence for display math, and the Unicode character or a code span inline (USERGUIDE.md §13).
-docs/GH-CLI.md: 1 edit(s) reapplied, 2 block(s) updated from upstream
+docs/GH-CLI.md: 1 edit(s) reapplied, 2 block(s) updated from upstream, no conflicts
 rc=0
 ```
 
-**The exit code does not move** — a warning is not a conflict and not an error,
-and a document containing math returns exactly what it returned before this
-guard existed ([§16](#exit-codes)). If you want CI to fail on it, gate on
-`cedit md canonicalize --check <file>`, which already exits 1 for any file whose
+Nothing is said about it, because there is nothing to say: a preserved span is
+not a warning. Detection is what drives the preservation, and it is narrow on
+purpose — only a `$`/`$$` span whose content holds a backslash, and only
+outside code spans, fenced blocks, indented code, HTML blocks and front matter.
+`$100 and $200`, `$x + y = z$`, `$a_i b_j$`, `$[a,b]$` and `` `$\rightarrow$` ``
+were byte-stable before and are untouched now.
+
+There is one construct the preservation cannot reach, and cedit does warn about
+that one — a `$...$` span in a **table cell that also contains `\|`**. The
+parser hands back the cell already unescaped, so the span cannot be located in
+your source to protect it, and it is rewritten the old way:
+
+```console
+$ cedit sync --from vendor; echo "rc=$?"
+docs/TABLES.md: warning: 1 dollar-delimited math span(s) could not be located in the source
+    line 12: $x | y \alpha$
+    cedit preserves $...$ byte for byte by rewriting the source around it, and
+    cannot for these — canonicalisation will escape the backslash ($\x -> $\\x),
+    which GitHub reads inside math as a line break, so the rendered maths changes.
+    Use a ```math fence for display math, and the Unicode character or a code span
+    inline (USERGUIDE.md §13).
+docs/TABLES.md: 1 edit(s) reapplied, 2 block(s) updated from upstream
+rc=0
+```
+
+**The exit code does not move** — a warning is not a conflict and not an error
+([§16](#exit-codes)). If you want CI to fail on it, gate on
+`cedit md canonicalize --check <file>`, which exits 1 for any file whose
 canonical form differs.
 
-Detection is narrow on purpose: only a `$`/`$$` span whose content holds a
-backslash, and only outside code spans, fenced blocks, indented code, HTML
-blocks and front matter. `$100 and $200`, `$x + y = z$`, `$a_i b_j$`, `$[a,b]$`
-and `` `$\rightarrow$` `` are all byte-stable and stay quiet.
-
-Write this instead:
+For that one case, and any time you would rather not rely on the placeholder,
+write this instead:
 
 | Instead of | Write | Why |
 | --- | --- | --- |
-| `$$ \frac{a}{b} $$` | a ```` ```math ```` fence | already round-trips byte for byte, and GitHub renders it as display math |
+| `$$ \frac{a}{b} $$` | a ```` ```math ```` fence | round-trips byte for byte with nothing to protect, and GitHub renders it as display math |
 | `$\rightarrow$` | the character — `→` | what this repo's own docs use; no escaping involved |
 | `$\alpha$` as *text* about the syntax | a code span — `` `$\alpha$` `` | code spans are never rewritten |
 
@@ -1709,11 +1728,19 @@ Write this instead:
 ```
 ````
 
-Making `$...$` parse as math is not on the roadmap: every published
-`mdformat-dollarmath` requires `mdformat<0.8` against the pinned
+Making `$...$` parse as math is still not on the roadmap — preserving it is not
+the same as understanding it, and nothing keys on the contents of a span. Every
+published `mdformat-dollarmath` requires `mdformat<0.8` against the pinned
 `mdformat==1.0.0`, and `mdformat-myst` would add a second frontmatter plugin —
 a parser-identity change in its own right (see
 [.claude/rules/hash-stability.md](.claude/rules/hash-stability.md)).
+
+**If you tracked a document with `$...$` math before cedit 0.4.0**, its
+`.cedit/base/` snapshot holds the rewritten form, and this release moves it.
+Re-baseline that document — the recipe is *Re-baselining a document* in
+[.claude/rules/hash-stability.md](.claude/rules/hash-stability.md); your
+adaptations live in the working copy, so none of them are lost. Documents with
+no such math are unaffected: their hashes and canonical bytes do not move.
 
 **Upstream is not fetched.** `--from` takes a directory or a file that already
 exists on disk. Submodules, subtrees, `curl`, a sync script — your transport.
@@ -1803,11 +1830,11 @@ git ls-files '*.md' | xargs -n1 cedit md canonicalize --check
 `xargs` exits **123** when any invocation exited 1 — non-zero is the signal;
 the exact code is `xargs`'s, not cedit's.
 
-The same command is the gate for `$...$` math ([§13](#13-limits-stated-plainly)):
-a file whose math the round-trip would rewrite is by definition not canonical,
-and the warning on stderr names the lines. cedit itself only warns — a math
-span never moves an exit code — so this is where a build failure comes from if
-you want one.
+The same command is still the gate for the one `$...$` construct cedit cannot
+preserve ([§13](#13-limits-stated-plainly)): a file the round-trip would rewrite
+is by definition not canonical, and the warning on stderr names the lines.
+cedit itself only warns — a math span never moves an exit code — so this is
+where a build failure comes from if you want one.
 
 **See what the round trip will do before you snapshot** — the canonical form is
 what gets stored and hashed, so this is the diff you actually care about:
@@ -1864,8 +1891,9 @@ ______________________________________________________________________
 | `expected a token stream as emitted by cedit md json, got a dict` | `md json --tree` piped into `md from-json` | drop `--tree` — the flat token stream is the rebuildable shape, the tree is for reading ([§5.7](#57-md--stateless-parser-views)) |
 | your edit re-applied to the wrong copy of an identical block | occurrence index is positional and upstream reordered | see [§11](#11-what-alignment-buys-you); make the block distinguishable |
 | `status` reports `STRUCTURAL DRIFT` but exits 0 | only conflicts drive exit 1 | gate on `diff` (exits 2) if you need drift to fail CI |
-| `warning: N dollar-delimited math span(s) contain a backslash` | `$...$`/`$$...$$` math, which the parser does not know — the backslash gets escaped and GitHub reads `\\` as a line break | rewrite it: a ```` ```math ```` fence, `→`, or a code span. See [§13](#13-limits-stated-plainly). The exit code is unaffected; `md canonicalize --check` is the CI gate |
-| your rendered maths grew stray line breaks after a sync | the above, unnoticed — the warning goes to **stderr**, which a `>` redirect does not capture | `cedit md canonicalize --check <doc>`; then fix the spans and re-run |
+| `warning: N dollar-delimited math span(s) could not be located in the source` | a `$...$` span in a table cell that also holds `\|` — the parser hands the cell back unescaped, so cedit cannot protect it and the backslash gets escaped | rewrite that span: a ```` ```math ```` fence, `→`, or a code span. See [§13](#13-limits-stated-plainly). The exit code is unaffected; `md canonicalize --check` is the CI gate |
+| your rendered maths grew stray line breaks after a sync | the above, unnoticed — the warning goes to **stderr**, which a `>` redirect does not capture. Every other `$...$` span is preserved byte for byte | `cedit md canonicalize --check <doc>`; then fix the spans and re-run |
+| a sync you expected to be clean is a wall of conflicts, and the documents contain `$...$` math | cedit 0.4.0 preserves that math; before it, `.cedit/base/` recorded the rewritten form, so the base moved under you | re-baseline those documents — *Re-baselining a document* in [.claude/rules/hash-stability.md](.claude/rules/hash-stability.md). Only math-bearing documents are affected |
 
 **Conflicts on blocks nobody touched.** That is what a moved hash looks like
 from the outside, and two commands settle it without guessing. `.cedit/base/`
@@ -1928,7 +1956,8 @@ fixes, not a breakage.
 **Warnings are outside this table.** The `$...$` math warning
 ([§13](#13-limits-stated-plainly)) is stderr text and nothing else: it never
 adds a code, never upgrades one, and a document that gained a math span still
-returns what it returned before. Anything that needs to fail a build gates on
+returns what it returned before — preserving the math gave cedit nothing to
+fail on. Anything that needs to fail a build gates on
 `md canonicalize --check`.
 
 ### State layout
@@ -2017,9 +2046,10 @@ so diffs stay local and reviewable.
   refusal is per block with a report.
 - **Clobber your text.** On a conflict the working file keeps the local version,
   always.
-- **Rewrite `$...$` math without telling you.** It cannot parse it as math, so
-  a backslash inside the span gets escaped; every write path warns on stderr
-  first ([§13](#13-limits-stated-plainly)).
+- **Rewrite `$...$` math.** It cannot parse it as math, but it preserves the
+  span byte for byte on every write path. The one construct it cannot protect —
+  a span in a table cell holding `\|` — is warned about on stderr first
+  ([§13](#13-limits-stated-plainly)).
 - **Sync a document with open conflicts.** It would merge against a base you
   never accepted.
 - **Commit anything.** The document and `.cedit/` are yours to commit, together.

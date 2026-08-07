@@ -138,15 +138,15 @@ resolve` speak.
   rewrites, table-cell tweaks, front-matter edits.
 - Fetching upstream. `--from` takes a directory (mirroring your doc
   paths) or a file; git submodules, subtrees or curl are your transport.
-- `$...$` / `$$...$$` **LaTeX math**. The parser does not know that
-  syntax, so a backslash inside the span is escaped —
-  `$\rightarrow$` → `$\\rightarrow$`, which GitHub reads as a line
-  break *inside* math. cedit **warns on stderr** wherever it is about to
-  write canonicalised bytes and leaves the exit code alone; gate on
-  `cedit md canonicalize --check` if you want CI to fail. Write a
-  ```` ```math ```` fence for display math (it already round-trips byte
-  for byte), `→` inline, or a code span. See
-  [USERGUIDE.md §13](https://github.com/sdlctools/cedit/blob/main/USERGUIDE.md#13-limits-stated-plainly).
+- **Parse** `$...$` / `$$...$$` **LaTeX math**. The parser does not know
+  that syntax — but cedit no longer rewrites it either: every such span is
+  preserved byte for byte on every path that writes, so
+  `$\rightarrow$` stays `$\rightarrow$`. The one exception is a span in a
+  table cell that also holds `\|`, which cedit **warns about on stderr**
+  and leaves the exit code alone; gate on `cedit md canonicalize --check`
+  if you want CI to fail. See
+  [USERGUIDE.md §13](https://github.com/sdlctools/cedit/blob/main/USERGUIDE.md#13-limits-stated-plainly),
+  which also covers re-baselining a document tracked before 0.4.0.
 
 ## Layout
 
@@ -158,7 +158,7 @@ resolve` speak.
 | `cedit/merge3.py` | the 3-way merge matrix + overlay derivation |
 | `cedit/align.py` | block-sequence alignment (LCS over Merkle hashes, moves, fuzzy) |
 | `cedit/blocks.py` | block extraction, splicing, render-and-verify |
-| `cedit/mathguard.py` | the `$...$` math guard: warn on stderr before canonicalisation rewrites it |
+| `cedit/mathguard.py` | the `$...$` math guard: carry the math through canonicalisation byte-exact, warn on stderr about what it cannot |
 | `cedit/state.py` | `.cedit/` — base snapshots, manifest (+ conflicts), overlay |
 | `cedit/store.py` | atomic writes: temp file + `rename(2)`, so a crash never leaves half-written state |
 | `cedit/mdcore/` | **frozen**: the pinned parser + tree_diff — every recorded hash is a function of these |
