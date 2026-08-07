@@ -5,9 +5,15 @@
     cedit sync [<doc>...] [--from <upstream dir-or-file>] [-n]
     cedit status [<doc>...]
     cedit resolve <doc> <hash[:occ]> --take local|upstream | --show
+    cedit md canonicalize|ast|json|from-json|blocks [<file>|-]
 
 One entry point (`python3 -m cedit` runs it too), the same subcommands for a
 human and for CI. Exit codes: 0 clean, 1 conflicts recorded or found, 2 errors.
+
+The five workflow subcommands are stateful — each opens `.cedit/` and talks
+about tracked documents. The `md` group (`mdcli.py`) is not: those are
+stateless views of the parsing core, and the only one that can return 1 is
+`canonicalize --check`.
 """
 
 from __future__ import annotations
@@ -18,6 +24,7 @@ import os
 import sys
 
 from .blocks import StructureMismatch, canonicalise, parse_doc, splice_block, render_verified
+from .mdcli import MarkdownCliError, add_md_group
 from .mdcore import tree_diff
 from .merge3 import ORPHAN, Conflict, StructuralDrift, local_edits, merge
 from .state import State, StateError, norm_doc
@@ -331,7 +338,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
                     "across upstream updates (see SPEC.md).",
     )
     parser.add_argument("--state-dir", default=None,
-                        help="state directory (default: .cedit)")
+                        help="state directory (default: .cedit); ignored by "
+                             "the stateless `md` subcommands")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("snapshot", help="start tracking a document")
@@ -367,6 +375,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
                    help="print the three versions in full")
     p.set_defaults(func=cmd_resolve)
 
+    add_md_group(sub)
+
     return parser
 
 
@@ -374,7 +384,8 @@ def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
     try:
         return args.func(args)
-    except (StateError, StructuralDrift, StructureMismatch, FileNotFoundError) as exc:
+    except (StateError, StructuralDrift, StructureMismatch, MarkdownCliError,
+            FileNotFoundError) as exc:
         print(exc, file=sys.stderr)
         return 2
 

@@ -65,7 +65,7 @@ Developing *cedit* rather than using it? Work from a source checkout:
 python3 -m venv venv
 venv/bin/pip install -r requirements.txt   # the parsing stack is pinned EXACTLY — see the file
 venv/bin/pip install -e .                  # optional: only to run cedit from another repo
-venv/bin/python3 -m pytest                 # 31 tests, no network
+venv/bin/python3 -m pytest                 # 58 tests, no network
 ```
 
 ## Quickstart
@@ -112,6 +112,24 @@ Everything above in depth — every flag, every output line, the conflict
 lifecycle end to end, the `.cedit/` layout and a troubleshooting table — is
 in [USERGUIDE.md](https://github.com/sdlctools/cedit/blob/main/USERGUIDE.md).
 
+## Looking at the parser directly
+
+Those five subcommands are stateful. `cedit md` is a group of stateless
+verbs — a file (or stdin) in, stdout out, no `.cedit/` touched — for seeing
+what the parser actually does to a document:
+
+```bash
+cedit md canonicalize SKILL.md          # the mdformat round-trip .cedit/base/ stores
+cedit md canonicalize --check SKILL.md  # exit 1 if it isn't already canonical
+cedit md blocks SKILL.md                # the blocks the merge keys on, with hashes
+cedit md ast --hashes SKILL.md          # the parse tree, every node's Merkle hash
+cedit md json SKILL.md | cedit md from-json   # md -> tokens -> md, losslessly
+```
+
+`md blocks` is the one to reach for when a conflict key is a mystery: it
+prints the same `<hash>:<occurrence>` keys that `cedit status` and `cedit
+resolve` speak.
+
 ## What it will not do (yet)
 
 - Local **structural** changes — inserting, deleting or moving whole
@@ -127,6 +145,7 @@ in [USERGUIDE.md](https://github.com/sdlctools/cedit/blob/main/USERGUIDE.md).
 | --- | --- |
 | `cedit/__main__.py` | the `python3 -m cedit` entry point |
 | `cedit/cli.py` | the five subcommands: snapshot / diff / sync / status / resolve |
+| `cedit/mdcli.py` | the `md` group: stateless parser views — canonicalize / ast / json / from-json / blocks |
 | `cedit/merge3.py` | the 3-way merge matrix + overlay derivation |
 | `cedit/align.py` | block-sequence alignment (LCS over Merkle hashes, moves, fuzzy) |
 | `cedit/blocks.py` | block extraction, splicing, render-and-verify |

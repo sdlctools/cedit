@@ -42,7 +42,7 @@ precise, per-block conflict when upstream touched the same block you did.
 python3 -m venv venv
 venv/bin/pip install -r requirements.txt   # the parsing stack is pinned EXACTLY — see below
 venv/bin/pip install -e .                  # only needed to run cedit from another repo, not for tests
-venv/bin/python3 -m pytest                 # 31 tests, no network, <1s
+venv/bin/python3 -m pytest                 # 58 tests, no network, <2s
 venv/bin/python3 -m pytest tests/test_merge3.py -k reapply   # one test / one file
 venv/bin/python3 -m cedit --help           # the CLI
 ```
@@ -76,6 +76,7 @@ before touching either.
 | Module | Responsibility |
 | --- | --- |
 | `cedit/cli.py` | the five subcommands — snapshot / diff / sync / status / resolve — plus exit-code policy |
+| `cedit/mdcli.py` | the `md` group — stateless parser views (canonicalize / ast / json / from-json / blocks), the only window onto the frozen core |
 | `cedit/merge3.py` | the merge matrix executed: REAPPLY / UPDATE / CONFLICT / ORPHAN per base block |
 | `cedit/align.py` | flat block-sequence alignment: LCS over Merkle hashes, similarity pairing, move and fuzzy passes |
 | `cedit/blocks.py` | block extraction (inline units + opaque blocks), splicing, render-and-verify |
@@ -83,7 +84,7 @@ before touching either.
 | `cedit/store.py` | atomic writes: temp file in the target dir + `rename(2)` |
 | `cedit/mdcore/` | **frozen**: `utils` (the pinned parser), `tree_diff` (hashing, segmentation, similarity) — every recorded hash is a function of these |
 | `cedit/__main__.py` | `python3 -m cedit` entry — delegates to `cli.main` |
-| `tests/` | `test_merge3.py` (the merge matrix), `test_cli.py` (end-to-end lifecycle), `test_packaging.py` (version resolution, pin drift, README link absoluteness), `test_parser_contract.py` (the drift check — invariant 2, enforced) |
+| `tests/` | `test_merge3.py` (the merge matrix), `test_cli.py` (end-to-end lifecycle), `test_mdcli.py` (the `md` group), `test_packaging.py` (version resolution, pin drift, README link absoluteness), `test_parser_contract.py` (the drift check — invariant 2, enforced) |
 
 A `sync` flows in one direction: **parse** B (base), L (local working copy)
 and U (incoming upstream) into block sequences → **align** L against B (the
