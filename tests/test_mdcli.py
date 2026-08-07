@@ -117,6 +117,72 @@ def test_canonicalize_warns_about_math_without_moving_the_exit_code(tmp_path, ca
     assert "dollar-delimited math span(s)" in err and "not canonical" in err
 
 
+# A canonical document already: definitions live at the end, in reference
+# order, orphans last — which is exactly where the renderer puts them. Written
+# canonical on purpose, so `canonicalize` being a byte-for-byte no-op is the
+# assertion rather than a coincidence of formatting.
+FOOTNOTES = """\
+# Notes
+
+The release pipeline is three workflows.[^ci]
+
+The local suite run is the gate.[^gate]
+
+[^ci]: They are **this repo's own CI**, not a consumer's.
+
+[^gate]: CI covers the version matrix you cannot run locally.
+
+[^unused]: A definition nothing references.
+"""
+
+
+def test_canonicalize_leaves_gfm_footnotes_byte_for_byte(tmp_path, capsys):
+    """CED-25: `[^label]:` used to canonicalise to `\\[^label\\]:`.
+
+    The reference survived untouched, so the document rendered on GitHub as a
+    dangling footnote link plus a visible literal — and cedit reported success
+    while writing that into `.cedit/base/`.
+    """
+    doc = tmp_path / "notes.md"
+    doc.write_text(FOOTNOTES, encoding="utf-8")
+
+    rc, out, _ = run(["md", "canonicalize", str(doc)], capsys)
+    assert rc == 0
+    assert out == FOOTNOTES
+    assert "\\[^" not in out
+
+    # --check agrees, which is the probe hash-stability.md points a consumer at.
+    rc, _, _ = run(["md", "canonicalize", "--check", str(doc)], capsys)
+    assert rc == 0
+
+
+def test_canonicalize_keeps_an_unreferenced_footnote_definition(tmp_path, capsys):
+    """`mdformat_footnote` deletes orphan definitions unless told otherwise.
+
+    cedit tells it otherwise (`make_parser`'s `keep_orphans` seed), because
+    canonicalisation is the step that produces `.cedit/base/` — content
+    dropped here is dropped before render-and-verify can compare anything.
+    """
+    doc = tmp_path / "notes.md"
+    doc.write_text(FOOTNOTES, encoding="utf-8")
+    rc, out, _ = run(["md", "canonicalize", str(doc)], capsys)
+    assert rc == 0
+    assert "[^unused]: A definition nothing references." in out
+
+
+def test_a_footnote_definition_body_is_an_editable_unit():
+    """The merge has to be able to reach footnote prose like any other prose.
+
+    A definition's body parses as an ordinary paragraph, so it gets a block
+    key and an overlay entry — which is what makes a locally adapted footnote
+    survive an upstream update instead of reading as a structural change.
+    """
+    blocks = parse_doc(FOOTNOTES).blocks
+    bodies = [b.text for b in blocks if b.kind == "unit"]
+    assert "They are **this repo's own CI**, not a consumer's." in bodies
+    assert "A definition nothing references." in bodies
+
+
 # --------------------------------------------------------------------------
 # ast
 # --------------------------------------------------------------------------

@@ -28,10 +28,26 @@ def make_parser() -> MarkdownIt:
     # nodes mdformat cannot render at all. Off, they are ordinary blockquotes,
     # which round-trip byte-for-byte and render identically on GitHub.
     md.options["alerts"] = False
+    # Seeded BEFORE the plugin loop because `update_mdit` hooks read it at
+    # parse-configuration time, not at render time: `mdformat_footnote`'s does
+    # `mdit.options["mdformat"]` unguarded and dies with `KeyError: 'mdformat'`
+    # against an unseeded parser — `ast_to_markdown` sets that key, and it runs
+    # long after the parser was built. Any future plugin reading its own config
+    # in `update_mdit` needs the same seed, so this is the general fix.
+    #
+    # `keep_orphans` is a content-preservation decision, not a formatting one.
+    # `mdformat_footnote` defaults it off, which makes its `reorder_footnotes`
+    # core rule *delete* every footnote definition nothing references — silent
+    # loss of a vendored document's content on the way into `.cedit/base/`,
+    # before render-and-verify can see it (both sides re-parse the same already-
+    # lossy canonical text). cedit never drops what it was handed, so: on.
+    # Measured: with it on, referenced, orphaned and multi-paragraph footnotes
+    # all round-trip byte-for-byte.
+    md.options["mdformat"] = {"keep_orphans": True}
     md.options["parser_extension"] = []
 
     # Dynamically load EVERY installed mdformat plugin (GFM, tables,
-    # frontmatter, ...).
+    # frontmatter, footnotes, ...).
     for plugin in mdformat.plugins.PARSER_EXTENSIONS.values():
         if plugin not in md.options["parser_extension"]:
             md.options["parser_extension"].append(plugin)
@@ -63,6 +79,12 @@ def ast_to_markdown(tokens) -> str:
         "number": True,        # consecutive numbering for ordered lists
         "wrap": "keep",        # retain semantic line breaks
         "compact_tables": True,
+        # Carried over from make_parser's seed, because this assignment
+        # *replaces* it. No renderer reads it today — orphan removal is a
+        # parse-time core rule — but leaving the render context saying the
+        # opposite of the parse context is how a future plugin version starts
+        # dropping orphans again on the way out.
+        "keep_orphans": True,
     }
     # NOTE: do NOT overwrite options["parser_extension"] here.
     return MDRenderer().render(tokens, options, {})
