@@ -172,7 +172,7 @@ Called after every resolution that changes either side.
 
 ### The argparse surface
 
-`build_arg_parser` (`cli.py:327`). Global `--state-dir` (default `.cedit` —
+`build_arg_parser` (`cli.py:334`). Global `--state-dir` (default `.cedit` —
 resolved in `state.State`, not here, so the default is `None` at this level).
 `sub = parser.add_subparsers(dest="command", required=True)`; each subparser
 sets `func` via `set_defaults`.
@@ -184,21 +184,71 @@ sets `func` via `set_defaults`.
 | `sync` | `docs` (`nargs="*"`) | `--from` (`dest="from_"`), `-n` / `--dry-run` |
 | `status` | `docs` (`nargs="*"`) | — |
 | `resolve` | `doc`, `key` | `--take {local,upstream}`, `--show` |
+| `md` | — | a nested subparser group; `mdcli.add_md_group(sub)` owns it |
 
 `--from` is `dest="from_"` everywhere because `from` is a keyword; the
 attribute is `args.from_`.
 
+`md` is the one subparser `cli.py` does not define itself: it calls
+`mdcli.add_md_group(sub)` (`cli.py:378`) and the verbs live in `mdcli.py`.
+The nesting is deliberate — it keeps top-level `--help` honest that those
+verbs obey a different contract (no state, and `--state-dir` is inert).
+
 ### Exit-code policy — invariant 4
 
-`main` (`cli.py:373`) wraps the dispatch in one `try` and maps
-`StateError`, `StructuralDrift`, `StructureMismatch` and `FileNotFoundError`
-to **2**. Anything else propagates as a traceback, deliberately: an unexpected
-exception is a bug, not a user error.
+`main` (`cli.py:383`) wraps the dispatch in one `try` and maps
+`StateError`, `StructuralDrift`, `StructureMismatch`, `MarkdownCliError` and
+`FileNotFoundError` to **2**. Anything else propagates as a traceback,
+deliberately: an unexpected exception is a bug, not a user error.
 
 `0` clean · `1` unresolved conflicts, recorded by `cmd_sync` or found by
 `cmd_status` · `2` errors. The two commands that can return 1 both compute it
 the same way — a boolean accumulated across docs, applied only after `rc` is
 known to be 0.
+
+The `md` group is held to the same contract without extending it. Only
+`md canonicalize --check` returns 1, and it means the same kind of thing the
+workflow commands mean by it — *a human needs to look at this file* — so a
+CI job can keep reading 1 as "not broken, not clean". Every other verb
+returns 0 or 2.
+
+## `cedit/mdcli.py` — the `md` group, stateless parser views
+
+Five verbs that open no state at all. They exist because `mdcore/` is
+otherwise unobservable: it is frozen because every consumer's hashes depend
+on it, and per
+[hash-stability.md](.claude/rules/hash-stability.md) the failure mode is
+*quiet*. Before this group the only instruments were
+`tests/parser_contract.py` — one fixed fixture — and ad-hoc `python3 -c`.
+
+| Verb | Emits |
+| --- | --- |
+| `canonicalize [file\|-]` | the mdformat round-trip — the exact bytes `.cedit/base/<doc>` would hold. `-i` rewrites via `store.atomic_write_text`; `--check` writes nothing and exits 1 when the input is not already canonical (mutually exclusive with `-i`) |
+| `ast [file\|-]` | indented tree dump; each line is `type [tag] [info=] [[kind]] [#hash] ["preview"]`. `--hashes` adds the Merkle hash, `--raw` skips canonicalisation |
+| `json [file\|-]` | `--tokens` (default) the flat `Token.as_dict()` stream; `--tree` a nested dict carrying `hash` and `kind` |
+| `from-json [file\|-]` | Markdown rendered from a `--tokens` stream |
+| `blocks [file\|-]` | the `blocks.Block` sequence the merge keys on — `kind`, `node_type`, `#hash:occurrence`, `info`, heading trail, text. `--json` for machine output, which also carries `doc_hash` |
+
+Helpers: `_read` / `_label` (stdin is `-`), `_tree(md, *, raw)` (parse +
+`tree_diff.hash_tree`), `_kind` (UNIT / OPAQUE / `""`), `_preview`,
+`_node_json`, `_token`.
+
+Three things are load-bearing:
+
+- **`_token` rebuilds children recursively.** `Token(**d)` leaves `children`
+  as a list of *dicts*, and nothing complains until mdformat's renderer dies
+  much later on `'dict' object has no attribute 'nesting'`. This is what
+  makes `json --tokens` → `from-json` a real round-trip rather than a dump;
+  `test_token_json_round_trips_back_to_the_canonical_form` pins it.
+- **The default is canonical, not raw.** Every verb canonicalises first, so
+  the hashes printed are the hashes `.cedit/` records. `--raw` (on `ast` and
+  `json` only) parses the file as it sits, which is how you see what the
+  round-trip changed. `blocks` has no `--raw` on purpose: raw hashes would
+  look authoritative and match nothing in any manifest.
+- **`blocks` goes through `blocks.parse_doc`**, the same call `merge3` makes
+  — it does not recompute anything. `test_blocks_keys_match_the_recorded_parser_baseline`
+  cross-checks its output against `tests/parser-baseline.json`, so the drift
+  check and this verb cannot disagree.
 
 ## `cedit/merge3.py` — the merge matrix, executed
 
@@ -634,6 +684,18 @@ plus the edge cases that shaped the code (`test_local_insertion_is_structural_dr
 (`test_resolve_take_local_rekeys_the_edit`, `test_orphan_resolution`),
 `test_dry_run_writes_nothing` and the two clean-error paths.
 
+`tests/test_mdcli.py` drives the `md` group through `cli.main`, pinning
+contracts rather than formatting: the token JSON really round-trips
+(`test_token_json_round_trips_back_to_the_canonical_form`), `md blocks`
+agrees with `parse_doc` *and* with `tests/parser-baseline.json`
+(`test_blocks_json_reports_exactly_what_the_merge_keys_on`,
+`test_blocks_keys_match_the_recorded_parser_baseline`), and the exit codes
+stay inside invariant 4 — 1 only from `canonicalize --check`, 2 for every
+bad input, parametrised over the verbs in
+`test_a_missing_file_is_a_clean_exit_2`. `test_state_dir_is_accepted_and_ignored`
+holds the stateless claim: pointed at a `--state-dir`, the verbs must not
+create it.
+
 `tests/test_packaging.py` covers the two packaging facts that rot silently:
 `cedit.__version__` resolving from distribution metadata with a
 `0.0.0+source` fallback for an uninstalled checkout
@@ -654,7 +716,7 @@ prerelease riding along under `continue-on-error`) are excluded: they are
 early warning, not claimed support.
 
 ```bash
-venv/bin/python3 -m pytest                                   # 31 tests, no network, <1s
+venv/bin/python3 -m pytest                                   # 58 tests, no network, <2s
 venv/bin/python3 -m pytest tests/test_merge3.py -k reapply   # one test / one file
 venv/bin/python3 -m cedit --help                             # the CLI
 ```
@@ -729,9 +791,17 @@ prerequisite, not an afterthought.
 
 ### Recipe: a new subcommand
 
+First decide *which* surface it belongs on. A command that opens `.cedit/`
+and talks about tracked documents is a workflow subcommand and follows the
+six steps below. A stateless view — a file or stdin in, stdout out — is a
+new verb in `mdcli.add_md_group`, and costs far less: no doc-count churn
+(step 5 does not apply, since "five" still means the five stateful ones),
+and the only exit codes available to it are 0 and 2 unless you can argue,
+as `canonicalize --check` does, that 1 really means "a human needs to look".
+
 Six places, and the last three are what gets forgotten:
 
-1. `cli.build_arg_parser` (`cli.py:327`) — `sub.add_parser(...)`, then
+1. `cli.build_arg_parser` (`cli.py:334`) — `sub.add_parser(...)`, then
    `set_defaults(func=cmd_yours)`. `--from` is `dest="from_"` by convention
    (`from` is a keyword).
 2. `cli.cmd_yours` — take `args`, return an int. Raise `StateError` for
