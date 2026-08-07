@@ -17,7 +17,7 @@ the same thing you did.
 
 | Document | What's in it |
 | --- | --- |
-| [USERGUIDE.md](https://github.com/sdlctools/cedit/blob/main/USERGUIDE.md) | **How to drive it** — a five-minute tour, a per-flag reference for all five subcommands, the conflict lifecycle worked end to end, the `.cedit/` layout, a cookbook and a troubleshooting table |
+| [USERGUIDE.md](https://github.com/sdlctools/cedit/blob/main/USERGUIDE.md) | **How to drive it** — a five-minute tour, a per-flag reference for all five subcommands and for the `md` parser views, the conflict lifecycle worked end to end, the `.cedit/` layout, a cookbook and a troubleshooting table |
 | [SPEC.md](https://github.com/sdlctools/cedit/blob/main/SPEC.md) | **The design** — the merge matrix, the normative sync algorithm, the state format, the reuse rules, and what is phase 1 vs. phase 2 vs. never |
 | [AGENTS.md](https://github.com/sdlctools/cedit/blob/main/AGENTS.md) | **Changing cedit itself** — build and test commands, the architecture in one table, and the five invariants a change must not violate. `CLAUDE.md` exists only to pull this in, so every AI assistant reads the same file |
 | [ARCHITECTURE.md](https://github.com/sdlctools/cedit/blob/main/ARCHITECTURE.md) | **The code, and how to change it** — every function, dataclass field and constant, the end-to-end call graph from `cli.main` down to the splice, where each invariant is actually enforced, and a *Changing cedit* section: which changes move consumers' stored hashes, and what to touch to add a subcommand, a block kind or a state field |
@@ -65,7 +65,7 @@ Developing *cedit* rather than using it? Work from a source checkout:
 python3 -m venv venv
 venv/bin/pip install -r requirements.txt   # the parsing stack is pinned EXACTLY — see the file
 venv/bin/pip install -e .                  # optional: only to run cedit from another repo
-venv/bin/python3 -m pytest                 # 58 tests, no network
+venv/bin/python3 -m pytest                 # 105 tests, no network
 ```
 
 ## Quickstart
@@ -138,6 +138,15 @@ resolve` speak.
   rewrites, table-cell tweaks, front-matter edits.
 - Fetching upstream. `--from` takes a directory (mirroring your doc
   paths) or a file; git submodules, subtrees or curl are your transport.
+- `$...$` / `$$...$$` **LaTeX math**. The parser does not know that
+  syntax, so a backslash inside the span is escaped —
+  `$\rightarrow$` → `$\\rightarrow$`, which GitHub reads as a line
+  break *inside* math. cedit **warns on stderr** wherever it is about to
+  write canonicalised bytes and leaves the exit code alone; gate on
+  `cedit md canonicalize --check` if you want CI to fail. Write a
+  ```` ```math ```` fence for display math (it already round-trips byte
+  for byte), `→` inline, or a code span. See
+  [USERGUIDE.md §13](https://github.com/sdlctools/cedit/blob/main/USERGUIDE.md#13-limits-stated-plainly).
 
 ## Layout
 
@@ -149,6 +158,7 @@ resolve` speak.
 | `cedit/merge3.py` | the 3-way merge matrix + overlay derivation |
 | `cedit/align.py` | block-sequence alignment (LCS over Merkle hashes, moves, fuzzy) |
 | `cedit/blocks.py` | block extraction, splicing, render-and-verify |
+| `cedit/mathguard.py` | the `$...$` math guard: warn on stderr before canonicalisation rewrites it |
 | `cedit/state.py` | `.cedit/` — base snapshots, manifest (+ conflicts), overlay |
 | `cedit/store.py` | atomic writes: temp file + `rename(2)`, so a crash never leaves half-written state |
 | `cedit/mdcore/` | **frozen**: the pinned parser + tree_diff — every recorded hash is a function of these |

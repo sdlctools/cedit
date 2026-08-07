@@ -29,6 +29,7 @@ from markdown_it.token import Token
 from markdown_it.tree import SyntaxTreeNode
 
 from .blocks import OPAQUE, UNIT, canonicalise, parse_doc
+from .mathguard import warn_fragile_math
 from .mdcore import tree_diff
 from .mdcore.utils import ast_to_markdown, markdown_to_ast
 from .store import atomic_write_text, dumps, read_text
@@ -90,6 +91,9 @@ def _preview(text: str) -> str:
 
 def cmd_md_canonicalize(args) -> int:
     source = _read(args.file)
+    # Stderr, in every mode — the exit code is untouched, and `--check`'s 1
+    # is the more useful signal for a CI job either way.
+    warn_fragile_math(source, _label(args.file))
     canonical = canonicalise(source)
 
     if args.check:

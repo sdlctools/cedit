@@ -226,10 +226,28 @@ cedit status [<path>...]                       # per-doc edits, conflicts, base 
 cedit resolve <path> <hash[:occ]> --take local|upstream | --show
 ```
 
+Alongside them, and outside this surface, sits one **stateless** group —
+implemented in `cedit/mdcli.py`, opening no `.cedit/` at all:
+
+```bash
+cedit md canonicalize [file|-] [-i | --check]  # the mdformat round-trip .cedit/base/ stores
+cedit md ast [file|-] [--hashes] [--raw]       # the parse tree, indented
+cedit md json [file|-] [--tokens | --tree] [--raw]   # the same, as JSON
+cedit md from-json [file|-]                    # a --tokens stream back to Markdown
+cedit md blocks [file|-] [--json]              # the edit blocks the merge keys on
+```
+
+It is a *view* on the frozen core below, not part of the model: nothing here
+reads or writes state, so no rule in this document constrains it beyond the
+exit codes. It exists because the *Reuse rules* make `mdcore/` unobservable —
+see [USERGUIDE.md](USERGUIDE.md) §5.7.
+
 One entry point, same subcommand set for a human and a future CI job. Exit
 codes: 0 clean, 1 unresolved conflicts exist (a sync that recorded them, a
-status that sees them), 2 errors. A doc with open conflicts refuses to
-sync again until they are resolved.
+status that sees them), 2 errors. `md canonicalize --check` is the one
+exception to that reading of 1, and a deliberately narrow one — it still means
+*a human needs to look at this file*, never *this is broken*. A doc with open
+conflicts refuses to sync again until they are resolved.
 
 ## Reuse rules — what must not fork
 
@@ -287,3 +305,15 @@ decides it, and what consumers do when hashes moved. The invariants:
   anchoring model above; cedit is not a general tree 3-way merge.
 - Multi-consumer coordination (two machines editing the same vendored
   copy) — that's git's job on the consumer repo.
+- **Syntax the pinned parser does not have** — `$...$` / `$$...$$` LaTeX
+  math above all. Canonicalisation escapes a backslash inside such a span
+  (`$\rightarrow$` → `$\\rightarrow$`), which GitHub renders as a line
+  break inside math, and no later stage can detect it: the block structure
+  is unchanged and every hash is taken over the rewritten text. Teaching
+  the parser that syntax would be a *parser identity* change — a hash move
+  for every consumer, over a construct that already has a working spelling
+  (a ```` ```math ```` fence round-trips byte for byte). So cedit detects
+  and **warns on stderr** instead, leaving the exit code alone
+  (`cedit/mathguard.py`; USERGUIDE.md §13). Warning rather than refusing is
+  the same gate philosophy as everywhere else here: surface it, never
+  silently decide.

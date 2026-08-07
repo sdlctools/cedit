@@ -74,7 +74,7 @@ A change is **hash-moving** if it alters any of:
 | deleting an uncalled symbol | inert, and provable in one run of the drift check |
 | any pin bump | assume hash-moving until the drift check says otherwise |
 
-`cedit/mdcore/utils.py:20-30` carries two worked examples of hash-neutral
+`cedit/mdcore/utils.py` carries three worked examples of narrow-blast-radius
 changes with the argument written out inline:
 
 - **`tasklists = False`** — markdown-it-py ≥ 4.2's `gfm-like2` parses task
@@ -86,14 +86,30 @@ changes with the argument written out inline:
 - **`alerts = False`** — `> [!NOTE]` would parse into `alert` nodes mdformat
   cannot render at all. Off, they are ordinary blockquotes that round-trip
   byte for byte and render identically on GitHub.
+- **`options["mdformat"] = {"keep_orphans": True}`, seeded before the plugin
+  loop** (CED-25) — the one of the three that *is* hash-moving, and the worked
+  example of scoping the move instead of waving at it. Adding
+  `mdformat-footnote` stops `[^label]:` being escaped to `\[^label\]:`, so the
+  canonical form of any document holding a footnote **definition** changes;
+  the seed is separately required because that plugin's `update_mdit` reads
+  `mdit.options["mdformat"]` unguarded and dies with `KeyError: 'mdformat'`
+  against an unseeded parser. The claim shipped with it was measured on both
+  sides: the unedited fixture re-canonicalised to its recorded
+  `canonical_sha256` with all 40 block records identical, the repo's ten other
+  Markdown files were byte-identical old parser vs new, and a sweep of
+  footnote-*adjacent* constructs — regex character classes like `[^a-z]` in
+  prose, in code spans and in fences, references with no definition,
+  reference-style links, pre-escaped brackets, footnote-like text in table
+  cells — all came out unchanged. Only a real definition moves.
 
-Both arguments have the same shape: *the output is unchanged*, not *the
-change looks small*. That is the only shape that works, and it is a claim
-about output — so measure it rather than arguing it.
+All three arguments have the same shape: a claim about *output*, over a
+named corpus, not *the change looks small*. That is the only shape that
+works — so measure it rather than arguing it, and when it does move, measure
+how far.
 
 ## The pins
 
-Six runtime pins, and they exist in two places that must stay byte-identical:
+Seven runtime pins, and they exist in two places that must stay byte-identical:
 `requirements.txt` and `pyproject.toml`'s `[project] dependencies`.
 `tests/test_packaging.py::test_pyproject_pins_match_requirements_txt` fails if
 they drift, because the first is what a source checkout gets and the second is
@@ -105,6 +121,7 @@ mdit-py-plugins==0.6.1
 mdformat==1.0.0
 mdformat-gfm==1.0.0
 mdformat-frontmatter==2.1.2
+mdformat-footnote==0.1.3
 linkify-it-py==2.1.0
 ```
 
@@ -112,13 +129,20 @@ Bump them one at a time, running the drift check between each.
 
 ### The installed plugin set is part of the parser identity
 
-`make_parser` (`cedit/mdcore/utils.py:33-38`) does not name its extensions.
+`make_parser` (`cedit/mdcore/utils.py:51-56`) does not name its extensions.
 It appends **every** entry of `mdformat.plugins.PARSER_EXTENSIONS` and calls
 `update_mdit` on each — a runtime enumeration of whatever is installed in the
 environment. So installing any further mdformat plugin (`mdformat-tables`,
-`mdformat-footnote`, one arriving as a transitive dependency of something
-unrelated) changes what the parser *is*, exactly like bumping a pin, and
-nothing in `requirements.txt` records that it happened.
+`mdformat-simple-breaks`, one arriving as a transitive dependency of
+something unrelated) changes what the parser *is*, exactly like bumping a
+pin, and nothing in `requirements.txt` records that it happened.
+
+`mdformat-footnote` is the pin that arrived that way and got adopted (CED-25)
+rather than pinned out: the parser was wrong without it, silently escaping
+`[^label]:` into visible literal text. Adopting a plugin is the *other*
+response to this section, and it is the more invasive one — a plugin can also
+add parse-time behaviour nobody asked for, which is why that entry seeds
+`keep_orphans` rather than taking the plugin's defaults.
 
 The drift check records the plugin set for precisely this reason; it is the
 one class of drift no lockfile would catch.
@@ -227,15 +251,17 @@ adaptations live in the working copy, not in `.cedit/`:
    conflicts.
 
 If that revision is genuinely gone, re-canonicalise the stored base in place
-instead:
+instead — `cedit md canonicalize` is that operation on the supported surface,
+and `-i` writes through `store.atomic_write_text`, so an interrupted run cannot
+leave a half-written base:
 
 ```bash
-venv/bin/python3 -c "
-import pathlib
-from cedit.blocks import canonicalise
-p = pathlib.Path('.cedit/base/<doc>')
-p.write_text(canonicalise(p.read_text('utf-8')), 'utf-8')"
+cedit md canonicalize -i .cedit/base/<doc>
 ```
+
+`--check` on the same path is the probe that tells you whether it is needed at
+all: the base was written canonical, so a non-zero exit means this parser
+disagrees with what is stored, which is the first damage class above.
 
 Second best: the recorded `base_doc_hash` stays stale until the next `sync`
 rewrites it. It is still preferable to inventing a base revision that never
@@ -267,7 +293,9 @@ existed.
 | --- | --- | --- |
 | `test_parser_contract_has_not_drifted` fails right after a `pip install` | the environment does not match `requirements.txt`, or something pulled in an extra mdformat plugin | read which class it names; reinstall from `requirements.txt` before concluding anything about the code |
 | The check names a *plugin* nobody added on purpose | a transitive dependency shipped an mdformat entry point | pin it out, or accept it and re-record knowing every hash moved |
-| The check is green but a consumer still hits a wall of conflicts | their environment, not yours — see the plugin corollary above | have them compare their installed plugin set against the baseline's |
+| The check is green but a consumer still hits a wall of conflicts | their environment, not yours — see the plugin corollary above | have them compare their installed plugin set against the baseline's, and run `cedit md canonicalize --check .cedit/base/<doc>` on their machine: a non-zero exit says the canonical form moved under them, which is the first damage class above |
 | Full suite green, drift check red | working as designed: the suite cannot see a consistent hash move | classify the change, then decide; do not "fix" it by re-recording |
 | Drift check green, full suite red | an ordinary bug — the hashes are fine | fix the code |
-| `KeyError` on a node type, or an assertion inside mdformat's renderer | a parser upgrade grew a construct mdformat cannot render — the failure that produced `tasklists=False` and `alerts=False` | switch the construct off in `make_parser` **only** if the resulting token stream is unchanged, and record the argument inline like the two existing ones |
+| `KeyError` on a node type, or an assertion inside mdformat's renderer | a parser upgrade grew a construct mdformat cannot render — the failure that produced `tasklists=False` and `alerts=False` | switch the construct off in `make_parser` **only** if the resulting token stream is unchanged, and record the argument inline like the existing ones |
+| `KeyError: 'mdformat'` from inside a plugin's `update_mdit`, while `make_parser` is still building the parser | that plugin reads its own configuration out of `mdit.options["mdformat"]` at parse-configuration time; `ast_to_markdown` sets that key, and it runs much later | already fixed generally — `make_parser` seeds the key before the plugin loop. If a plugin needs a *value* in there, add it to the seed and to `ast_to_markdown`'s dict together, or the two contexts disagree |
+| A construct silently disappears from a document that canonicalises without error | a plugin's own default is to drop it — `mdformat_footnote` deletes unreferenced definitions unless `keep_orphans` is set | never inherit a plugin's content-dropping default. Canonicalisation feeds `.cedit/base/`, and render-and-verify cannot see it: both sides re-parse the same already-lossy text |

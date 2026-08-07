@@ -73,6 +73,7 @@ PINNED = (
     "mdformat",
     "mdformat-gfm",
     "mdformat-frontmatter",
+    "mdformat-footnote",
     "linkify-it-py",
 )
 

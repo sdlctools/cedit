@@ -40,6 +40,9 @@ cli.cmd_sync
 ├── entry["conflicts"] guard                refuse to sync a doc with open conflicts
 ├── state.read_base(doc)                    B — the canonical base snapshot
 ├── blocks.canonicalise(upstream file)      U — mdformat round-trip, then compared to B
+├── mathguard.warn_fragile_math(U src, L)   stderr only; the round-trip above already
+│                                           rewrote any `$…$` math, and nothing below
+│                                           this line can see that it did
 └── merge3.merge(B, L, U)
     ├── blocks.parse_doc  ×3                → ParsedDoc(canonical, tokens, root, blocks)
     │   ├── mdcore.utils.markdown_to_ast     the one pinned parser
@@ -83,11 +86,12 @@ Two properties fall out of this shape and are worth holding onto:
 
 ## `cedit/cli.py` — subcommands and exit-code policy
 
-Imports its whole working set at the top (`cli.py:20-24`): `blocks`
+Imports its whole working set at the top (`cli.py:20-25`): `blocks`
 (`StructureMismatch`, `canonicalise`, `parse_doc`, `splice_block`,
-`render_verified`), `mdcore.tree_diff`, `merge3` (`ORPHAN`, `Conflict`,
-`StructuralDrift`, `local_edits`, `merge`), `state` (`State`, `StateError`,
-`norm_doc`), `store` (`atomic_write_text`, `read_text`).
+`render_verified`), `mathguard` (`warn_fragile_math`), `mdcore.tree_diff`,
+`merge3` (`ORPHAN`, `Conflict`, `StructuralDrift`, `local_edits`, `merge`),
+`state` (`State`, `StateError`, `norm_doc`), `store` (`atomic_write_text`,
+`read_text`).
 
 ### Display helpers
 
@@ -109,7 +113,10 @@ shapes:
   records the adaptations that already exist, so a copy adapted before
   `cedit` existed is picked up whole.
 
-Then `write_base` → `set_entry` → `save_manifest` → `set_overlay` →
+Both sources are read into a variable and passed through
+`mathguard.warn_fragile_math` before `parse_doc` sees them — the upstream
+file under its `--from` label, the working copy under the doc's own. Then
+`write_base` → `set_entry` → `save_manifest` → `set_overlay` →
 `save_overlay`.
 
 **`cmd_diff`** (`cli.py:103`) — overlay against base, for the docs named or
@@ -134,8 +141,15 @@ one `--from <dir>` serves every tracked document at once.
 5. canonicalised upstream equal to the base → `up to date`, nothing written;
 6. `StructuralDrift` / `StructureMismatch` out of `merge` → stderr, rc 2.
 
+Between 5 and 6 both sources go through `mathguard.warn_fragile_math` —
+*after* the up-to-date short-circuit, so a no-op sync stays silent, and
+before `merge`, because by then the canonical form has already been taken
+and no later stage can tell that a `$…$` span was rewritten. The warning is
+stderr text and changes no exit code.
+
 `--dry-run` / `-n` reports (`result.as_text()` plus every conflict) and
-returns before the first write. The return is
+returns before the first write — the math warning still fires, which is the
+point of a dry run. The return is
 `rc or (1 if any_conflicts else 0)` (`cli.py:214-216`): a hard error outranks
 a conflict.
 
@@ -159,7 +173,7 @@ candidates when several do.
 | `--show`, or no `--take` | `_print_conflict(..., full=True)`, exit 0. Read-only |
 | `--take local` | the working file already holds the local text, so only the manifest record is dropped; `_refresh_overlay` re-keys the edit against the new base — the `git rerere` move |
 | `--take local` on an `ORPHAN` | **refused**, exit 2: keeping a block upstream deleted is a structural edit (phase 2). The text stays in the manifest |
-| `--take upstream` | on an `ORPHAN`, drop the record (deletion accepted). Otherwise locate the block in the working copy by `(kind, node_type, text, info)`, `splice_block` the upstream text in, `render_verified`, write, drop the record, refresh the overlay |
+| `--take upstream` | on an `ORPHAN`, drop the record (deletion accepted). Otherwise `warn_fragile_math` on the working copy, locate the block in it by `(kind, node_type, text, info)`, `splice_block` the upstream text in, `render_verified`, write, drop the record, refresh the overlay |
 
 The `--take upstream` lookup is exact-match by construction (`cli.py:292-297`);
 if the user has since hand-edited that block it returns `None` and the command
@@ -223,7 +237,7 @@ on it, and per
 
 | Verb | Emits |
 | --- | --- |
-| `canonicalize [file\|-]` | the mdformat round-trip — the exact bytes `.cedit/base/<doc>` would hold. `-i` rewrites via `store.atomic_write_text`; `--check` writes nothing and exits 1 when the input is not already canonical (mutually exclusive with `-i`) |
+| `canonicalize [file\|-]` | the mdformat round-trip — the exact bytes `.cedit/base/<doc>` would hold. `-i` rewrites via `store.atomic_write_text`; `--check` writes nothing and exits 1 when the input is not already canonical (mutually exclusive with `-i`). All three modes call `mathguard.warn_fragile_math` on the input first — stderr only, so stdout stays the data channel |
 | `ast [file\|-]` | indented tree dump; each line is `type [tag] [info=] [[kind]] [#hash] ["preview"]`. `--hashes` adds the Merkle hash, `--raw` skips canonicalisation |
 | `json [file\|-]` | `--tokens` (default) the flat `Token.as_dict()` stream; `--tree` a nested dict carrying `hash` and `kind` |
 | `from-json [file\|-]` | Markdown rendered from a `--tokens` stream |
@@ -512,6 +526,63 @@ invisible failure mode is a replacement that re-parses into different block
 structure; this is the gate, and it runs on **every** render — the merge
 (`merge3.py:248`) and `resolve --take upstream` (`cli.py:304`) alike.
 
+**What it structurally cannot catch**, and why `mathguard` exists: a rewrite
+*inside* one block's inline content. `block_signature` stops at `inline` by
+design, and both signatures are taken over text the round-trip has already
+produced, so `$\rightarrow$` → `$\\rightarrow$` compares equal on both sides
+and passes. `tests/test_mathguard.py::test_render_and_verify_cannot_catch_this`
+pins that, so the claim stays measured rather than asserted.
+
+## `cedit/mathguard.py` — the `$...$` math guard
+
+One detector and one reporter, and no other module depends on them; nothing
+here participates in hashing, alignment or the merge.
+
+The defect: GitHub renders `$...$` and `$$...$$` as math, the pinned parser
+has no such syntax, and so a backslash inside such a span is ordinary text
+that `ast_to_markdown` correctly escapes — `$\rightarrow$` becomes
+`$\\rightarrow$`, which GitHub reads as a *line break inside math*. The page
+changes. Every stage downstream of `canonicalise` is blind to it (see
+`render_verified` above), the hashes are all taken over the rewritten text,
+and cedit exits 0. That is a silent clobber, which invariant 3 forbids.
+
+| Symbol | Behaviour |
+| --- | --- |
+| `MathSpan` (`mathguard.py:54`) | frozen dataclass: `line` (1-based), `delim` (`"$"` / `"$$"`), `text` (the run as written) |
+| `_mask_code_spans(src)` (`mathguard.py:67`) | blanks inline code spans to `\x00`, **preserving length** so every later offset stays valid. CommonMark's rule: a run of N backticks is closed by the next run of exactly N; an unmatched run is literal text; `\` escapes the next character |
+| `_matching_backticks(src, start, run)` (`mathguard.py:96`) | end offset of the next backtick run of exactly `run`, or `None` |
+| `_inline_close(masked, open_at)` (`mathguard.py:112`) | GitHub's inline delimiter rules — no whitespace after the opener, none before the closer, no newline inside. This is what keeps `$100 and $200` from being a span at all |
+| `_spans(masked)` (`mathguard.py:136`) | yields `(delim, start, end)`; `$$` is tried first and may cross lines, `$` may not |
+| `find_fragile_math(md)` (`mathguard.py:163`) | the entry point: every span whose **content holds a backslash**, over the *source* as written |
+| `warn_fragile_math(md, label, *, stream=None)` (`mathguard.py:197`) | prints the report to stderr and returns the spans. **Never touches the exit code** |
+
+Two design points carry the precision claim:
+
+- **It iterates `inline` tokens, not lines.** Only an `inline` token carries
+  the raw source of its own region (`.content`) together with the line it
+  starts on (`.map`), so fences, indented code, HTML blocks and front matter
+  are excluded *for free* — they are simply other token types. Table cells
+  and headings are included for free by the same rule.
+- **A backslash is the whole trigger.** Every `$`-bearing construct without
+  one is byte-stable today, prose dollar amounts included, so the false
+  positive surface is small — and `tests/test_mathguard.py` re-measures both
+  columns through `canonicalise` on every run rather than trusting the list.
+
+Call sites (all of them are about to write canonicalised bytes):
+`cmd_snapshot` on both sources, `cmd_sync` on both sources after the
+up-to-date short-circuit, `cmd_resolve --take upstream` on the working copy,
+and `mdcli.cmd_md_canonicalize` on its input. `cmd_diff` and `cmd_status`
+deliberately stay silent — they write nothing, and `md canonicalize --check`
+is the standalone probe.
+
+Making `$...$` actually parse as math was rejected, not deferred: every
+published `mdformat-dollarmath` requires `mdformat>=0.7,<0.8` against the
+pinned `mdformat==1.0.0` (pip returns `ResolutionImpossible`), and
+`mdformat-myst`, which has no upper bound, pulls in a second frontmatter
+plugin beside the pinned `mdformat-frontmatter==2.1.2` — a parser-identity
+change, hence a hash move, for a syntax that has a working spelling already.
+The ```` ```math ```` fence round-trips byte for byte today.
+
 ## `cedit/state.py` — the `.cedit/` directory
 
 | Path | Contents | Committed |
@@ -609,6 +680,14 @@ stack exactly (invariant 2):
 - `alerts = False` — `> [!NOTE]` would parse into `alert` nodes mdformat
   cannot render at all. Off, they are ordinary blockquotes that round-trip
   byte-for-byte;
+- `options["mdformat"] = {"keep_orphans": True}`, seeded **before** the plugin
+  loop below. Two jobs in one line. It exists at all because `update_mdit`
+  hooks read that key while the parser is being built, long before
+  `ast_to_markdown` sets it — `mdformat_footnote`'s does so unguarded and
+  raises `KeyError: 'mdformat'` without it (CED-25). And `keep_orphans` is on
+  because that plugin's default *deletes* footnote definitions nothing
+  references; canonicalisation is what produces `.cedit/base/`, so a deletion
+  here is content lost before render-and-verify can compare anything;
 - then **every installed mdformat parser extension** is appended to
   `parser_extension` and `update_mdit`-ed. The set of installed plugins is
   therefore part of the parser identity — which is why adding an mdformat
@@ -617,9 +696,9 @@ stack exactly (invariant 2):
 
 | Symbol | Purpose |
 | --- | --- |
-| `markdown_to_ast(raw_markdown)` (`utils.py:43`) | parse to markdown-it tokens |
-| `parse_inline(text)` (`utils.py:48`) | tokenize as *inline* only — `parseInline(text, {})[0].children or []`. The splice needs this so `- ` stays a paragraph |
-| `ast_to_markdown(tokens)` (`utils.py:58`) | render back through `MDRenderer` with `mdformat` options `number=True`, `wrap="keep"`, `compact_tables=True`. Never overwrite `options["parser_extension"]` here |
+| `markdown_to_ast(raw_markdown)` (`utils.py:59`) | parse to markdown-it tokens |
+| `parse_inline(text)` (`utils.py:64`) | tokenize as *inline* only — `parseInline(text, {})[0].children or []`. The splice needs this so `- ` stays a paragraph |
+| `ast_to_markdown(tokens)` (`utils.py:74`) | render back through `MDRenderer` with `mdformat` options `number=True`, `wrap="keep"`, `compact_tables=True`, `keep_orphans=True`. This assignment *replaces* `make_parser`'s seed, so `keep_orphans` is repeated to stop the render context contradicting the parse context. Never overwrite `options["parser_extension"]` here |
 
 ### `mdcore/tree_diff.py` — hashing, segmentation, similarity
 
@@ -665,8 +744,8 @@ names are the durable reference.
 | --- | --- |
 | 1 — `mdcore/` frozen | Convention plus one check: the freeze notices at `mdcore/__init__.py`, `mdcore/tree_diff.py:1-17` and `mdcore/utils.py:1-9`, and SPEC.md's *Reuse rules*. Nothing can catch a *refactor* — review has to — but `tests/parser_contract.py` catches any refactor that changed behaviour |
 | 2 — exact pins | `requirements.txt` (the rationale is in the file itself) → `mdcore/utils.make_parser` (`utils.py:16`) → `blocks.canonicalise` (`blocks.py:96`) → every `Block.hash` and `ParsedDoc.doc_hash` |
-| 3 — no silent clobber | `merge3.merge` (`merge3.py:240-241`) records the conflict **and** splices the local text; `Conflict` carries all three versions (`merge3.py:81`) and `state.set_entry` persists them; `cli.cmd_sync` (`cli.py:159-163`) refuses to sync a doc with open conflicts; `cli.cmd_resolve` (`cli.py:257`) is the only path that takes upstream text |
-| 4 — exit codes | `cli.main` (`cli.py:377-379`) maps four exception types to 2; `cli.cmd_sync` (`cli.py:214-216`) and `cli.cmd_status` (`cli.py:243`) are the only sources of 1 |
+| 3 — no silent clobber | `merge3.merge` (`merge3.py:240-241`) records the conflict **and** splices the local text; `Conflict` carries all three versions (`merge3.py:81`) and `state.set_entry` persists them; `cli.cmd_sync` (`cli.py:159-163`) refuses to sync a doc with open conflicts; `cli.cmd_resolve` (`cli.py:257`) is the only path that takes upstream text. `mathguard.warn_fragile_math`, called from every write path, covers the one clobber the merge cannot see — a `$…$` span the round-trip rewrites *inside* a block |
+| 4 — exit codes | `cli.main` (`cli.py:377-379`) maps four exception types to 2; `cli.cmd_sync` (`cli.py:214-216`) and `cli.cmd_status` (`cli.py:243`) are the only sources of 1. `mathguard` is the deliberate counter-example: it reports a real defect and still returns nothing, because a document that grew a math span must keep the code it had |
 | 5 — replacements only | `merge3.local_edits` (`merge3.py:184-187`) raises `StructuralDrift` on any local insert/delete/move, reported per block by `_describe_structural` (`merge3.py:155`); the merged document is U's tree rendered by `render_verified(upstream, …)` (`merge3.py:248`), and `blocks.splice_block` is the only mutation. `cli.cmd_resolve` refuses `--take local` on an orphan (`cli.py:268-273`) for the same reason |
 
 ## Tests
@@ -696,6 +775,19 @@ bad input, parametrised over the verbs in
 holds the stateless claim: pointed at a `--state-dir`, the verbs must not
 create it.
 
+`tests/test_mathguard.py` holds the math guard to the two claims that make
+it worth having. Precision: every case in the `CORRUPTED` and `STABLE` lists
+is re-measured through `canonicalise` on each run
+(`test_the_corrupting_column_really_is_corrupted`,
+`test_the_stable_column_is_byte_stable`) *before* the detector is asked about
+it, so a parser change that moved a case between columns fails here rather
+than quietly invalidating the guard. And necessity:
+`test_render_and_verify_cannot_catch_this` shows the corrupting round-trip
+passing `render_verified` with equal block signatures — the reason a separate
+detector exists at all. `test_the_warning_names_the_label_the_lines_and_the_remedy`
+pins stdout staying empty; `tests/test_cli.py` and `tests/test_mdcli.py` pin
+the exit codes not moving.
+
 `tests/test_packaging.py` covers the two packaging facts that rot silently:
 `cedit.__version__` resolving from distribution metadata with a
 `0.0.0+source` fallback for an uninstalled checkout
@@ -716,7 +808,7 @@ prerelease riding along under `continue-on-error`) are excluded: they are
 early warning, not claimed support.
 
 ```bash
-venv/bin/python3 -m pytest                                   # 58 tests, no network, <2s
+venv/bin/python3 -m pytest                                   # 105 tests, no network, <2s
 venv/bin/python3 -m pytest tests/test_merge3.py -k reapply   # one test / one file
 venv/bin/python3 -m cedit --help                             # the CLI
 ```
@@ -753,6 +845,7 @@ same Markdown hashes to, everywhere, retroactively.
 | Change `SIM_THRESHOLD`, `FUZZY_THRESHOLD`, `align`'s passes | no | pairing only — recomputed on every run |
 | Change the merge matrix in `merge3.merge` | no | decides over hashes, does not produce them |
 | Change `splice_block`, `render_verified`, `cli` output, `store`, `state` | no | downstream of hashing |
+| Change anything in `mathguard.py` | no | it reads the source and writes to stderr; it is not on the hashing path at all, and adding a plugin to *fix* `$…$` math instead would be — see the module's closing paragraph |
 
 The first five rows are all invariant-1/2 territory and four of them are in
 frozen code you should not be editing at all — the row exists to say what
@@ -799,6 +892,16 @@ new verb in `mdcli.add_md_group`, and costs far less: no doc-count churn
 and the only exit codes available to it are 0 and 2 unless you can argue,
 as `canonicalize --check` does, that 1 really means "a human needs to look".
 
+It is cheaper, not free. A new verb still has to be **listed in five
+places**, and CED-24 was the task of paying that debt down for the group's
+first five: the verb table and a worked example in `USERGUIDE.md` §5.7 — a
+real captured run against the §4 tour document, per that section's own rule,
+never hand-written output — the `md` column of the exit-code matrix in §16,
+the usage block in `README.md` (*Looking at the parser directly*), the verb
+table in this file's `mdcli.py` section, and `tests/test_mdcli.py`. The
+`--help` transcript at `USERGUIDE.md:284` and `:290` lists the *group*, not
+its verbs, so a new verb does not touch it.
+
 Six places, and the last three are what gets forgotten:
 
 1. `cli.build_arg_parser` (`cli.py:334`) — `sub.add_parser(...)`, then
@@ -813,14 +916,16 @@ Six places, and the last three are what gets forgotten:
 4. `tests/test_cli.py` — drive it through `cli.main` in a `tmp_path` repo,
    as the existing tests do; assert the exit code, not just the output.
 5. **The count "five" and the literal subcommand list are hard-coded in
-   seven doc locations** — `README.md:20` and `README.md:127`, `AGENTS.md`'s
-   architecture table (`AGENTS.md:72`), and in `USERGUIDE.md` the TOC entry
-   (`:18`), the §3 heading (`:129`) and both lines of the `--help`
-   transcript (`:279`, `:285`). The exit-code matrix at `USERGUIDE.md:1410`
-   names the commands without counting them, and `SPEC.md` §CLI deliberately
-   says "same subcommand set" instead of a number. Nothing tests any of
-   this; grep for `five subcommands` and for the literal
-   `{snapshot,diff,sync,status,resolve}`.
+   eight doc locations** — `README.md:20`, `:117` and the layout table at
+   `:147`, `AGENTS.md`'s architecture table (`AGENTS.md:78`), and in
+   `USERGUIDE.md` the TOC entry (`:18`), the §3 heading (`:129`) and both
+   lines of the `--help` transcript (`:284`, `:290`). The per-command
+   exit-code matrix at `USERGUIDE.md:1829` names the commands without
+   counting them, and `SPEC.md` §CLI deliberately says "same subcommand set"
+   instead of a number. Nothing tests any of this, and these line numbers go
+   stale every time the guide grows — grep for `five subcommands` and for the
+   literal `{snapshot,diff,sync,status,resolve,md}`, which is the string the
+   `--help` transcript actually carries now that the group is wired in.
 6. If it can write, route it through `store.atomic_write_text` and mirror
    `cmd_sync`'s ordering: working file first, state second.
 
