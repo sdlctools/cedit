@@ -305,3 +305,15 @@ decides it, and what consumers do when hashes moved. The invariants:
   anchoring model above; cedit is not a general tree 3-way merge.
 - Multi-consumer coordination (two machines editing the same vendored
   copy) — that's git's job on the consumer repo.
+- **Syntax the pinned parser does not have** — `$...$` / `$$...$$` LaTeX
+  math above all. Canonicalisation escapes a backslash inside such a span
+  (`$\rightarrow$` → `$\\rightarrow$`), which GitHub renders as a line
+  break inside math, and no later stage can detect it: the block structure
+  is unchanged and every hash is taken over the rewritten text. Teaching
+  the parser that syntax would be a *parser identity* change — a hash move
+  for every consumer, over a construct that already has a working spelling
+  (a ```` ```math ```` fence round-trips byte for byte). So cedit detects
+  and **warns on stderr** instead, leaving the exit code alone
+  (`cedit/mathguard.py`; USERGUIDE.md §13). Warning rather than refusing is
+  the same gate philosophy as everywhere else here: surface it, never
+  silently decide.
