@@ -5,9 +5,11 @@
     "mdformat": "1.0.0",
     "mdformat-gfm": "1.0.0",
     "mdformat-frontmatter": "2.1.2",
+    "mdformat-footnote": "0.1.3",
     "linkify-it-py": "2.1.0"
   },
   "plugins": [
+    "footnote",
     "frontmatter",
     "gfm",
     "tables"
@@ -20,6 +22,7 @@
     "langPrefix": "language-",
     "linkify": false,
     "maxNesting": 20,
+    "mdformat": "<dict>",
     "parser_extension": "<list>",
     "quotes": "“”‘’",
     "strikethrough_single_tilde": true,
@@ -29,9 +32,9 @@
     "xhtmlOut": true
   },
   "fixture": {
-    "source_sha256": "dc82445e12d5861d8e33cb60424d55e1e6a703dfd668234b5ec0c64bae660fc1",
-    "canonical_sha256": "ba6a988176f995d78b5780f76e26dbcaca69ae44aea00b30100188b985b0907f",
-    "doc_hash": "e67942a9762fccef",
+    "source_sha256": "81a604f20c950a0f84cb796f396b4b1a580ce747bc863c052552b96ac41f4e28",
+    "canonical_sha256": "b94cdebd0a7817a974d58567e2c5a326d8b0e23241c38de39dcf54de0a4f63c0",
+    "doc_hash": "8b0f48964c8f1cb0",
     "blocks": [
       {
         "key": "c488372d0d1411e8:0",
@@ -48,7 +51,7 @@
         "context": ""
       },
       {
-        "key": "00c9e49ade52bf93:0",
+        "key": "9fed9066bd81aa79:0",
         "kind": "unit",
         "node_type": "paragraph",
         "info": "",
@@ -293,11 +296,25 @@
         "context": "Blockquotes and alerts"
       },
       {
-        "key": "5e3d94cbb83b14bb:0",
+        "key": "7f95eeb3da8e49a2:0",
         "kind": "unit",
         "node_type": "heading",
         "info": "",
         "context": "Blockquotes and alerts"
+      },
+      {
+        "key": "f695e69b9225ecdc:0",
+        "kind": "unit",
+        "node_type": "paragraph",
+        "info": "",
+        "context": "Footnotes"
+      },
+      {
+        "key": "5e3d94cbb83b14bb:0",
+        "kind": "unit",
+        "node_type": "heading",
+        "info": "",
+        "context": "Footnotes"
       },
       {
         "key": "05d24bbff1b3e053:0",
@@ -308,6 +325,34 @@
       },
       {
         "key": "35a4dd01d10e5f51:0",
+        "kind": "unit",
+        "node_type": "paragraph",
+        "info": "",
+        "context": "Breaks"
+      },
+      {
+        "key": "fd4023fbd8dab5d0:0",
+        "kind": "unit",
+        "node_type": "paragraph",
+        "info": "",
+        "context": "Breaks"
+      },
+      {
+        "key": "e0051200cf93c74e:0",
+        "kind": "unit",
+        "node_type": "paragraph",
+        "info": "",
+        "context": "Breaks"
+      },
+      {
+        "key": "62c73471303c9e69:0",
+        "kind": "unit",
+        "node_type": "paragraph",
+        "info": "",
+        "context": "Breaks"
+      },
+      {
+        "key": "5f39d66cf466e049:0",
         "kind": "unit",
         "node_type": "paragraph",
         "info": "",

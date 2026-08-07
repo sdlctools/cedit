@@ -680,6 +680,14 @@ stack exactly (invariant 2):
 - `alerts = False` — `> [!NOTE]` would parse into `alert` nodes mdformat
   cannot render at all. Off, they are ordinary blockquotes that round-trip
   byte-for-byte;
+- `options["mdformat"] = {"keep_orphans": True}`, seeded **before** the plugin
+  loop below. Two jobs in one line. It exists at all because `update_mdit`
+  hooks read that key while the parser is being built, long before
+  `ast_to_markdown` sets it — `mdformat_footnote`'s does so unguarded and
+  raises `KeyError: 'mdformat'` without it (CED-25). And `keep_orphans` is on
+  because that plugin's default *deletes* footnote definitions nothing
+  references; canonicalisation is what produces `.cedit/base/`, so a deletion
+  here is content lost before render-and-verify can compare anything;
 - then **every installed mdformat parser extension** is appended to
   `parser_extension` and `update_mdit`-ed. The set of installed plugins is
   therefore part of the parser identity — which is why adding an mdformat
@@ -688,9 +696,9 @@ stack exactly (invariant 2):
 
 | Symbol | Purpose |
 | --- | --- |
-| `markdown_to_ast(raw_markdown)` (`utils.py:43`) | parse to markdown-it tokens |
-| `parse_inline(text)` (`utils.py:48`) | tokenize as *inline* only — `parseInline(text, {})[0].children or []`. The splice needs this so `- ` stays a paragraph |
-| `ast_to_markdown(tokens)` (`utils.py:58`) | render back through `MDRenderer` with `mdformat` options `number=True`, `wrap="keep"`, `compact_tables=True`. Never overwrite `options["parser_extension"]` here |
+| `markdown_to_ast(raw_markdown)` (`utils.py:59`) | parse to markdown-it tokens |
+| `parse_inline(text)` (`utils.py:64`) | tokenize as *inline* only — `parseInline(text, {})[0].children or []`. The splice needs this so `- ` stays a paragraph |
+| `ast_to_markdown(tokens)` (`utils.py:74`) | render back through `MDRenderer` with `mdformat` options `number=True`, `wrap="keep"`, `compact_tables=True`, `keep_orphans=True`. This assignment *replaces* `make_parser`'s seed, so `keep_orphans` is repeated to stop the render context contradicting the parse context. Never overwrite `options["parser_extension"]` here |
 
 ### `mdcore/tree_diff.py` — hashing, segmentation, similarity
 

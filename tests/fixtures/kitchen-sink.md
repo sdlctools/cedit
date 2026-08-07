@@ -9,9 +9,9 @@ tags:
 
 This fixture exists to be parsed, not to be read. Every construct below is
 here because it can move a hash: front matter, fences with and without an
-info string, indented code, raw HTML, tables, task lists, alerts and nested
-lists. Editing it re-records the parser baseline, so edit it only when you
-mean to.
+info string, indented code, raw HTML, tables, task lists, alerts, nested
+lists and GFM footnotes. Editing it re-records the parser baseline, so edit
+it only when you mean to.
 
 It is deliberately **not** in canonical form: the indented code block, the
 padded table delimiters, the repeated `1.` and the `---` break all render to
@@ -78,6 +78,23 @@ Text with <span>inline html</span> in the middle of a paragraph.
 
 > [!NOTE]
 > A GitHub alert, which the parser is configured to leave as a blockquote.
+
+## Footnotes
+
+A reference[^note] and a second one[^multi], both of which mdformat escaped
+into visible literal text until `mdformat-footnote` was pinned.
+
+[^multi]: A definition with a second paragraph, so the four-space
+    continuation indent is under test too.
+
+    The second paragraph.
+
+[^note]: The definition, which the renderer moves to the end of the document
+    and reorders into *reference* order — hence this one written second.
+
+[^orphan]: A definition nothing references. It survives because `make_parser`
+    seeds `keep_orphans`; with the plugin's own default it would be deleted
+    here, silently, on the way into `.cedit/base/`.
 
 ## Breaks
 

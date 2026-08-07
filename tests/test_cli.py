@@ -268,3 +268,77 @@ def test_a_document_without_math_warns_about_nothing(repo, capsys):
     assert cli.main(["snapshot", DOC, "--from", upstream_file]) == 0
     # UPSTREAM_V1 carries `"$KEY"` inside a fence — neither math nor flagged.
     assert capsys.readouterr().err == ""
+
+
+# --------------------------------------------------------------------------
+# CED-25 — GFM footnotes across a whole lifecycle
+# --------------------------------------------------------------------------
+
+NOTES = os.path.join("skills", "demo", "NOTES.md")
+
+# Already canonical: the renderer puts definitions at the end in reference
+# order, orphans last, which is how this is written.
+NOTES_V1 = """\
+# Notes
+
+The release pipeline is three workflows.[^ci]
+
+The local suite run is the gate.[^gate]
+
+[^ci]: They are **this repo's own CI**, not a consumer's.
+
+[^gate]: CI covers the version matrix you cannot run locally.
+
+[^unused]: A definition nothing references.
+"""
+
+# Ordinary upstream evolution, nowhere near the footnote the consumer adapted.
+NOTES_V2 = NOTES_V1.replace(
+    "The release pipeline is three workflows.",
+    "The release pipeline is three workflows, documented separately.",
+)
+
+
+def test_footnotes_survive_a_snapshot_sync_cycle(repo, capsys):
+    """A footnote reference and its definition, end to end.
+
+    Before CED-25 this vendored file came out of `snapshot` with every
+    definition escaped to `\\[^label\\]:` — a dangling reference and a visible
+    literal on GitHub — and cedit exited 0 while doing it. The cycle below is
+    the whole contract: the base is byte-identical to what upstream shipped, a
+    footnote body is an adaptable block like any other, and an upstream update
+    elsewhere re-applies that adaptation rather than conflicting with it.
+    """
+    upstream = repo / "upstream" / NOTES
+    upstream.write_text(NOTES_V1, encoding="utf-8")
+    upstream_file = os.path.join("upstream", NOTES)
+
+    # -- snapshot vendors it unchanged, escapes and all absent -------------
+    assert cli.main(["snapshot", NOTES, "--from", upstream_file]) == 0
+    vendored = (repo / NOTES).read_text(encoding="utf-8")
+    assert vendored == NOTES_V1                      # byte-for-byte, not merely close
+    assert "\\[^" not in vendored
+    assert "[^unused]: A definition nothing references." in vendored
+    base = (repo / ".cedit" / "base" / NOTES).read_text(encoding="utf-8")
+    assert base == NOTES_V1                          # and the same went into state
+
+    # -- a footnote body is an ordinary editable block ---------------------
+    (repo / NOTES).write_text(
+        vendored.replace(
+            "CI covers the version matrix you cannot run locally.",
+            "CI covers the version matrix; `venv/bin/python3 -m pytest` is ours.",
+        ),
+        encoding="utf-8",
+    )
+    assert cli.main(["diff", NOTES]) == 0
+    assert "1 local edit(s)" in capsys.readouterr().out
+
+    # -- upstream moves elsewhere; the adapted footnote is re-applied ------
+    (repo / "upstream" / NOTES).write_text(NOTES_V2, encoding="utf-8")
+    assert cli.main(["sync", "--from", "upstream"]) == 0
+    merged = (repo / NOTES).read_text(encoding="utf-8")
+    assert "documented separately" in merged                        # upstream in
+    assert "`venv/bin/python3 -m pytest` is ours." in merged        # adaptation kept
+    assert "\\[^" not in merged                                     # still unescaped
+    assert "[^unused]: A definition nothing references." in merged  # orphan still there
+    assert manifest(repo)["docs"][NOTES]["conflicts"] == {}

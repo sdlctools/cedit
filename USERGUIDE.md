@@ -104,8 +104,8 @@ venv/bin/python3 -m pytest                 # 105 tests, no network, <2s
 ```
 
 **The pins are load-bearing.** `requirements.txt` pins `markdown-it-py`,
-`mdit-py-plugins`, `mdformat`, `mdformat-gfm`, `mdformat-frontmatter` and
-`linkify-it-py` to exact versions. Every hash in `.cedit/` — base document
+`mdit-py-plugins`, `mdformat`, `mdformat-gfm`, `mdformat-frontmatter`,
+`mdformat-footnote` and `linkify-it-py` to exact versions. Every hash in `.cedit/` — base document
 hashes, overlay keys, conflict keys — is taken over that one parser
 configuration. A minor upgrade can change what the parser emits, which silently
 moves every hash and turns your next sync into a wall of false conflicts.
