@@ -100,7 +100,7 @@ Working on cedit itself rather than using it? Install from a clone instead:
 python3 -m venv venv
 venv/bin/pip install -r requirements.txt   # the parsing stack, pinned EXACTLY
 venv/bin/pip install -e .                  # puts `cedit` on the venv's path
-venv/bin/python3 -m pytest                 # 31 tests, no network, <1s
+venv/bin/python3 -m pytest                 # 58 tests, no network, <2s
 ```
 
 **The pins are load-bearing.** `requirements.txt` pins `markdown-it-py`,
@@ -138,6 +138,11 @@ ______________________________________________________________________
 
 `diff` and `status` are read-only and safe at any moment. `sync` is the only
 command that merges. `resolve` is the only command that can clear a conflict.
+
+Alongside them sits `cedit md` — five *stateless* verbs that read no
+`.cedit/` state and work on any Markdown file, tracked or not. They are not
+part of the workflow above; they are how you look at what the parser sees.
+[§5.7](#57-md--stateless-parser-views) covers them.
 
 ______________________________________________________________________
 
@@ -270,30 +275,36 @@ One global flag, and it goes **before** the subcommand:
 
 | Flag | Default | Meaning |
 | --- | --- | --- |
-| `--state-dir` | `.cedit` | state directory, relative to the working directory |
+| `--state-dir` | `.cedit` | state directory, relative to the working directory (ignored by `md`) |
 | `-h`, `--help` | — | usage; also available per subcommand |
 
 ```console
 $ cedit --help
 usage: cedit [-h] [--state-dir STATE_DIR]
-             {snapshot,diff,sync,status,resolve} ...
+             {snapshot,diff,sync,status,resolve,md} ...
 
 Keep local adaptations of vendored Markdown alive across upstream updates (see
 SPEC.md).
 
 positional arguments:
-  {snapshot,diff,sync,status,resolve}
+  {snapshot,diff,sync,status,resolve,md}
     snapshot            start tracking a document
     diff                show local edits against the base
     sync                3-way merge a new upstream revision in
     status              per-document overlay/conflict summary
     resolve             settle one recorded conflict
+    md                  stateless parser views: canonicalize / ast / json /
+                        blocks
 
 options:
   -h, --help            show this help message and exit
   --state-dir STATE_DIR
-                        state directory (default: .cedit)
+                        state directory (default: .cedit); ignored by the
+                        stateless `md` subcommands
 ```
+
+`md` is the odd one out and §5.7 covers it: a group of stateless verbs that
+never open `.cedit/`, which is why `--state-dir` does nothing for them.
 
 `--state-dir` gives you a second, independent set of tracking state over the
 same files — useful for a dry experiment you do not want in the committed
@@ -650,6 +661,137 @@ GUIDE.md #7b47884c75de548e:0: the conflicted block is no longer in the file as r
 That is not a dead end — it is the *third* resolution, and the intended one for
 a real conflict: write the merged text yourself, then `--take local` to accept
 what you wrote (see [§10](#10-flow-a-conflict-end-to-end)).
+
+### 5.7 `md` — stateless parser views
+
+Everything above is stateful: it opens `.cedit/` and talks about tracked
+documents. `cedit md` is the opposite — a file (or `-` for stdin) in, stdout
+out, no state read or written, `--state-dir` ignored. Use it to see what the
+parser does to a document, whether or not that document is tracked at all.
+
+| Verb | Does |
+| --- | --- |
+| `md canonicalize [file]` | print the mdformat round-trip — the exact bytes `.cedit/base/` stores |
+| `md ast [file]` | print the parse tree, indented |
+| `md json [file]` | the same, as JSON |
+| `md from-json [file]` | render a token stream from `md json` back to Markdown |
+| `md blocks [file]` | print the edit blocks the merge keys on, with their hashes |
+
+Exit codes: `0`, `2` for errors, and `1` from `canonicalize --check` only.
+
+#### `md canonicalize`
+
+Every example below runs against `vendor/skills/deploy.md` from the
+[§4 tour](#4-five-minute-tour), so the hashes are the same ones you saw there.
+
+```console
+$ cedit md canonicalize vendor/skills/deploy.md > canonical.md   # to stdout
+$ cedit md canonicalize -i skills/deploy.md                      # rewrite atomically
+skills/deploy.md: canonicalised
+$ cedit md canonicalize -i skills/deploy.md
+skills/deploy.md: already canonical
+```
+
+`--check` writes nothing and exits **1** when the file is not already
+canonical — the shape a CI job or a pre-commit hook wants:
+
+```console
+$ cedit md canonicalize --check messy.md
+messy.md: not canonical
+$ echo $?
+1
+```
+
+`-i` and `--check` are mutually exclusive, and `-i` needs a real file.
+
+#### `md blocks`
+
+The one to reach for when a conflict key is a mystery. It prints the same
+`<hash>:<occurrence>` keys that `status` reports and `resolve` takes — note
+`#7b47884c75de548e:0`, the fence the tour adapts and later conflicts on:
+
+```console
+$ cedit md blocks vendor/skills/deploy.md
+vendor/skills/deploy.md: 7 block(s), doc 9ef5a0dbdc298d85
+[block unit heading] #21c9f999ed623912:0
+    text : Deploy skill
+
+[block unit paragraph] #84cd52d314d7df83:0
+    ctx  : Deploy skill
+    text : This skill takes a build from the artifact store and puts it on staging.
+
+[block unit heading] #bd367afe9f8a1d46:0
+    ctx  : Deploy skill
+    text : Preflight
+
+[block unit paragraph] #806bee9eb45a7cc0:0
+    ctx  : Preflight
+    text : Run the healthcheck before anything else:
+
+[block opaque fence] #7b47884c75de548e:0
+    ctx  : Preflight
+    info : bash
+    text : bash scripts/healthcheck.sh --strict
+
+[block unit heading] #ac2aee0b1c35c287:0
+    ctx  : Preflight
+    text : Deploy
+
+[block opaque fence] #300a5f90b873e850:0
+    ctx  : Deploy
+    info : bash
+    text : bash scripts/deploy.sh --env staging
+```
+
+The `doc 9ef5a0dbdc298d85` on the first line is the document hash `snapshot`
+recorded in the tour. `--json` gives the same content machine-readably, with
+every block's text untruncated.
+
+#### `md ast` and `md json`
+
+`md ast` marks which nodes are blocks (`[unit]` / `[opaque]`) and, with
+`--hashes`, annotates every node with its Merkle hash. Non-block nodes
+(`inline`, `text`) are hashed too — only the marked ones can carry an edit:
+
+```console
+$ cedit md ast --hashes vendor/skills/deploy.md
+heading h1 [unit] #21c9f999ed623912
+  inline #ab6b185c940f4549 "Deploy skill"
+    text #e748d4cb302780c9 "Deploy skill"
+paragraph p [unit] #84cd52d314d7df83
+  inline #9dfe68ce256805b3 "This skill takes a build from the artifact store and puts it…"
+    text #db19acb54f85b5c6 "This skill takes a build from the artifact store and puts it…"
+heading h2 [unit] #bd367afe9f8a1d46
+  inline #73670a1f9db979d3 "Preflight"
+    text #418698cd26d4a38c "Preflight"
+paragraph p [unit] #806bee9eb45a7cc0
+  inline #767ec645d62c94a1 "Run the healthcheck before anything else:"
+    text #013477f31375a242 "Run the healthcheck before anything else:"
+fence code info=bash [opaque] #7b47884c75de548e "bash scripts/healthcheck.sh --strict"
+heading h2 [unit] #ac2aee0b1c35c287
+  inline #999cc16acd1eb9fb "Deploy"
+    text #31d6651178022693 "Deploy"
+fence code info=bash [opaque] #300a5f90b873e850 "bash scripts/deploy.sh --env staging"
+```
+
+Both canonicalise first by default, so the hashes shown are the hashes
+`.cedit/` records. `--raw` parses the file exactly as it sits on disk —
+diffing `--raw` against the default is how you see what the round-trip
+changed. (`md blocks` has no `--raw`: raw hashes would match nothing in any
+manifest.)
+
+`md json` emits the flat markdown-it token stream by default. That shape is
+**lossless** — `md from-json` renders it straight back:
+
+```console
+$ cedit md json SKILL.md | cedit md from-json | diff - <(cedit md canonicalize SKILL.md)
+$ echo $?
+0
+```
+
+`--tree` gives a nested shape with `hash` and `kind` per node instead. It
+reads better, but it is for inspection only — `from-json` takes the token
+stream, not the tree, and says so if you hand it the wrong one.
 
 ______________________________________________________________________
 
@@ -1402,7 +1544,7 @@ ______________________________________________________________________
 | Code | Meaning |
 | --- | --- |
 | `0` | clean — nothing to do, or everything merged |
-| `1` | unresolved conflicts: a `sync` recorded them, or a `status` found them |
+| `1` | unresolved conflicts: a `sync` recorded them, or a `status` found them; or a file `md canonicalize --check` found not canonical |
 | `2` | error — nothing was merged |
 
 Per command:
@@ -1413,9 +1555,19 @@ Per command:
 | `1` | — | — | conflicts recorded | conflicts open | — |
 | `2` | already tracked, bad path, unreadable `--from`, structural drift | nothing tracked, untracked doc, structural drift | nothing tracked, conflicts already open, missing upstream, structural drift, structure mismatch | untracked doc, missing base, missing working copy | no/ambiguous key, `--take local` on an orphan, block edited since |
 
+And for the `md` group ([§5.7](#57-md--stateless-parser-views)):
+
+| Code | `md canonicalize` | `md ast` / `md json` / `md blocks` | `md from-json` |
+| --- | --- | --- | --- |
+| `0` | written, or `--check` passed | printed | rendered |
+| `1` | `--check` on a non-canonical file | — | — |
+| `2` | missing file, `-i` on stdin | missing file | invalid JSON, wrong shape, not a token |
+
 Two rules a CI script depends on: `1` never means "broken" and `2` never means
 "needs a human". Within one `sync` run over several documents, `2` wins — an
-error anywhere means the run's conflict count is not the whole story.
+error anywhere means the run's conflict count is not the whole story. `md
+canonicalize --check` keeps that reading: unformatted is a thing a human
+fixes, not a breakage.
 
 ### State layout
 
