@@ -100,6 +100,23 @@ def test_check_and_in_place_are_mutually_exclusive():
         cli.main(["md", "canonicalize", "--check", "-i", FIXTURE])
 
 
+def test_canonicalize_warns_about_math_without_moving_the_exit_code(tmp_path, capsys):
+    doc = tmp_path / "math.md"
+    doc.write_text("Inline $\\rightarrow$ here.\n", encoding="utf-8")
+
+    # stdout stays the data channel: the canonical form, and only that.
+    rc, out, err = run(["md", "canonicalize", str(doc)], capsys)
+    assert rc == 0
+    assert out == "Inline $\\\\rightarrow$ here.\n"
+    assert "dollar-delimited math span(s)" in err
+
+    # --check keeps its own meaning of 1 — the warning explains it, and the
+    # pair is the gate a CI job wires up (USERGUIDE.md §13).
+    rc, _, err = run(["md", "canonicalize", "--check", str(doc)], capsys)
+    assert rc == 1
+    assert "dollar-delimited math span(s)" in err and "not canonical" in err
+
+
 # --------------------------------------------------------------------------
 # ast
 # --------------------------------------------------------------------------

@@ -234,3 +234,37 @@ def test_dry_run_writes_nothing(repo):
 def test_untracked_doc_is_a_clean_error(repo, capsys):
     assert cli.main(["diff", DOC]) == 2
     assert "not tracked" in capsys.readouterr().err
+
+
+# `$\rightarrow$` canonicalises to `$\\rightarrow$`, which GitHub renders as a
+# line break inside math. Nothing downstream can see it (tests/test_mathguard.py),
+# so the CLI has to warn where the bytes are written — and the exit code stays
+# exactly what it was, per invariant 4.
+MATHY = UPSTREAM_V1.replace("Intro paragraph explaining the skill.",
+                            "Intro paragraph, where $\\rightarrow$ means \"then\".")
+
+
+def test_math_warning_does_not_change_snapshot_or_sync_exit_codes(repo, capsys):
+    upstream_file = os.path.join("upstream", DOC)
+    write_upstream(repo, MATHY)
+
+    assert cli.main(["snapshot", DOC, "--from", upstream_file]) == 0
+    captured = capsys.readouterr()
+    assert "dollar-delimited math span(s)" in captured.err
+    assert upstream_file in captured.err
+    assert "```math" in captured.err
+    assert "tracking" in captured.out                     # the run still succeeded
+
+    zshify_working_copy(repo)
+    write_upstream(repo, MATHY.replace('--project "$KEY"',
+                                       '--project "$KEY" --type Task'))
+    assert cli.main(["sync", "--from", "upstream"]) == 0   # still clean, still 0
+    err = capsys.readouterr().err
+    assert err.count("dollar-delimited math span(s)") == 2  # upstream and local
+
+
+def test_a_document_without_math_warns_about_nothing(repo, capsys):
+    upstream_file = os.path.join("upstream", DOC)
+    assert cli.main(["snapshot", DOC, "--from", upstream_file]) == 0
+    # UPSTREAM_V1 carries `"$KEY"` inside a fence — neither math nor flagged.
+    assert capsys.readouterr().err == ""

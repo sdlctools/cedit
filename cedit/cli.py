@@ -24,6 +24,7 @@ import os
 import sys
 
 from .blocks import StructureMismatch, canonicalise, parse_doc, splice_block, render_verified
+from .mathguard import warn_fragile_math
 from .mdcli import MarkdownCliError, add_md_group
 from .mdcore import tree_diff
 from .merge3 import ORPHAN, Conflict, StructuralDrift, local_edits, merge
@@ -87,10 +88,14 @@ def cmd_snapshot(args) -> int:
               f"upstream revision", file=sys.stderr)
         return 2
 
-    base = parse_doc(read_text(args.from_))
+    upstream_md = read_text(args.from_)
+    warn_fragile_math(upstream_md, args.from_)
+    base = parse_doc(upstream_md)
     doc_file = state.doc_path(doc)
     if os.path.exists(doc_file):
-        local = parse_doc(read_text(doc_file))
+        local_md = read_text(doc_file)
+        warn_fragile_math(local_md, doc)
+        local = parse_doc(local_md)
         edits = local_edits(base, local, doc_label=doc)
     else:
         # Initial vendoring: the working copy starts as the canonical base.
@@ -177,14 +182,21 @@ def cmd_sync(args) -> int:
             continue
 
         base_md = state.read_base(doc)
-        upstream_md = canonicalise(read_text(upstream_path))
+        upstream_src = read_text(upstream_path)
+        upstream_md = canonicalise(upstream_src)
         if upstream_md == base_md:
             print(f"{doc}: up to date")
             continue
 
+        # Both sources get canonicalised into bytes this run is about to
+        # write, so the warning has to come before the merge, not after it —
+        # nothing downstream can see the rewrite (see `mathguard`).
+        local_src = read_text(state.doc_path(doc))
+        warn_fragile_math(upstream_src, upstream_path)
+        warn_fragile_math(local_src, doc)
+
         try:
-            result = merge(base_md, read_text(state.doc_path(doc)),
-                           upstream_md, doc_label=doc)
+            result = merge(base_md, local_src, upstream_md, doc_label=doc)
         except (StructuralDrift, StructureMismatch) as exc:
             print(exc, file=sys.stderr)
             rc = 2
@@ -295,7 +307,9 @@ def cmd_resolve(args) -> int:
         print(f"{doc} #{conflict.key}: upstream deletion accepted")
         return 0
 
-    local = parse_doc(read_text(state.doc_path(doc)))
+    local_src = read_text(state.doc_path(doc))
+    warn_fragile_math(local_src, doc)
+    local = parse_doc(local_src)
     target = next(
         (b for b in local.blocks
          if b.kind == conflict.kind and b.node_type == conflict.node_type
