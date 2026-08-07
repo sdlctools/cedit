@@ -227,15 +227,17 @@ adaptations live in the working copy, not in `.cedit/`:
    conflicts.
 
 If that revision is genuinely gone, re-canonicalise the stored base in place
-instead:
+instead — `cedit md canonicalize` is that operation on the supported surface,
+and `-i` writes through `store.atomic_write_text`, so an interrupted run cannot
+leave a half-written base:
 
 ```bash
-venv/bin/python3 -c "
-import pathlib
-from cedit.blocks import canonicalise
-p = pathlib.Path('.cedit/base/<doc>')
-p.write_text(canonicalise(p.read_text('utf-8')), 'utf-8')"
+cedit md canonicalize -i .cedit/base/<doc>
 ```
+
+`--check` on the same path is the probe that tells you whether it is needed at
+all: the base was written canonical, so a non-zero exit means this parser
+disagrees with what is stored, which is the first damage class above.
 
 Second best: the recorded `base_doc_hash` stays stale until the next `sync`
 rewrites it. It is still preferable to inventing a base revision that never
