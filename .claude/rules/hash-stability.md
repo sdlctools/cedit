@@ -269,7 +269,7 @@ existed.
 | --- | --- | --- |
 | `test_parser_contract_has_not_drifted` fails right after a `pip install` | the environment does not match `requirements.txt`, or something pulled in an extra mdformat plugin | read which class it names; reinstall from `requirements.txt` before concluding anything about the code |
 | The check names a *plugin* nobody added on purpose | a transitive dependency shipped an mdformat entry point | pin it out, or accept it and re-record knowing every hash moved |
-| The check is green but a consumer still hits a wall of conflicts | their environment, not yours — see the plugin corollary above | have them compare their installed plugin set against the baseline's |
+| The check is green but a consumer still hits a wall of conflicts | their environment, not yours — see the plugin corollary above | have them compare their installed plugin set against the baseline's, and run `cedit md canonicalize --check .cedit/base/<doc>` on their machine: a non-zero exit says the canonical form moved under them, which is the first damage class above |
 | Full suite green, drift check red | working as designed: the suite cannot see a consistent hash move | classify the change, then decide; do not "fix" it by re-recording |
 | Drift check green, full suite red | an ordinary bug — the hashes are fine | fix the code |
 | `KeyError` on a node type, or an assertion inside mdformat's renderer | a parser upgrade grew a construct mdformat cannot render — the failure that produced `tasklists=False` and `alerts=False` | switch the construct off in `make_parser` **only** if the resulting token stream is unchanged, and record the argument inline like the two existing ones |

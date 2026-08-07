@@ -799,6 +799,16 @@ new verb in `mdcli.add_md_group`, and costs far less: no doc-count churn
 and the only exit codes available to it are 0 and 2 unless you can argue,
 as `canonicalize --check` does, that 1 really means "a human needs to look".
 
+It is cheaper, not free. A new verb still has to be **listed in five
+places**, and CED-24 was the task of paying that debt down for the group's
+first five: the verb table and a worked example in `USERGUIDE.md` §5.7 — a
+real captured run against the §4 tour document, per that section's own rule,
+never hand-written output — the `md` column of the exit-code matrix in §16,
+the usage block in `README.md` (*Looking at the parser directly*), the verb
+table in this file's `mdcli.py` section, and `tests/test_mdcli.py`. The
+`--help` transcript at `USERGUIDE.md:284` and `:290` lists the *group*, not
+its verbs, so a new verb does not touch it.
+
 Six places, and the last three are what gets forgotten:
 
 1. `cli.build_arg_parser` (`cli.py:334`) — `sub.add_parser(...)`, then
@@ -813,14 +823,16 @@ Six places, and the last three are what gets forgotten:
 4. `tests/test_cli.py` — drive it through `cli.main` in a `tmp_path` repo,
    as the existing tests do; assert the exit code, not just the output.
 5. **The count "five" and the literal subcommand list are hard-coded in
-   seven doc locations** — `README.md:20` and `README.md:127`, `AGENTS.md`'s
-   architecture table (`AGENTS.md:72`), and in `USERGUIDE.md` the TOC entry
-   (`:18`), the §3 heading (`:129`) and both lines of the `--help`
-   transcript (`:279`, `:285`). The exit-code matrix at `USERGUIDE.md:1410`
-   names the commands without counting them, and `SPEC.md` §CLI deliberately
-   says "same subcommand set" instead of a number. Nothing tests any of
-   this; grep for `five subcommands` and for the literal
-   `{snapshot,diff,sync,status,resolve}`.
+   eight doc locations** — `README.md:20`, `:117` and the layout table at
+   `:147`, `AGENTS.md`'s architecture table (`AGENTS.md:78`), and in
+   `USERGUIDE.md` the TOC entry (`:18`), the §3 heading (`:129`) and both
+   lines of the `--help` transcript (`:284`, `:290`). The per-command
+   exit-code matrix at `USERGUIDE.md:1829` names the commands without
+   counting them, and `SPEC.md` §CLI deliberately says "same subcommand set"
+   instead of a number. Nothing tests any of this, and these line numbers go
+   stale every time the guide grows — grep for `five subcommands` and for the
+   literal `{snapshot,diff,sync,status,resolve,md}`, which is the string the
+   `--help` transcript actually carries now that the group is wired in.
 6. If it can write, route it through `store.atomic_write_text` and mirror
    `cmd_sync`'s ordering: working file first, state second.
 

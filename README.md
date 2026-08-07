@@ -17,7 +17,7 @@ the same thing you did.
 
 | Document | What's in it |
 | --- | --- |
-| [USERGUIDE.md](https://github.com/sdlctools/cedit/blob/main/USERGUIDE.md) | **How to drive it** — a five-minute tour, a per-flag reference for all five subcommands, the conflict lifecycle worked end to end, the `.cedit/` layout, a cookbook and a troubleshooting table |
+| [USERGUIDE.md](https://github.com/sdlctools/cedit/blob/main/USERGUIDE.md) | **How to drive it** — a five-minute tour, a per-flag reference for all five subcommands and for the `md` parser views, the conflict lifecycle worked end to end, the `.cedit/` layout, a cookbook and a troubleshooting table |
 | [SPEC.md](https://github.com/sdlctools/cedit/blob/main/SPEC.md) | **The design** — the merge matrix, the normative sync algorithm, the state format, the reuse rules, and what is phase 1 vs. phase 2 vs. never |
 | [AGENTS.md](https://github.com/sdlctools/cedit/blob/main/AGENTS.md) | **Changing cedit itself** — build and test commands, the architecture in one table, and the five invariants a change must not violate. `CLAUDE.md` exists only to pull this in, so every AI assistant reads the same file |
 | [ARCHITECTURE.md](https://github.com/sdlctools/cedit/blob/main/ARCHITECTURE.md) | **The code, and how to change it** — every function, dataclass field and constant, the end-to-end call graph from `cli.main` down to the splice, where each invariant is actually enforced, and a *Changing cedit* section: which changes move consumers' stored hashes, and what to touch to add a subcommand, a block kind or a state field |

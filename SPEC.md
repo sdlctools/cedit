@@ -226,10 +226,28 @@ cedit status [<path>...]                       # per-doc edits, conflicts, base 
 cedit resolve <path> <hash[:occ]> --take local|upstream | --show
 ```
 
+Alongside them, and outside this surface, sits one **stateless** group —
+implemented in `cedit/mdcli.py`, opening no `.cedit/` at all:
+
+```bash
+cedit md canonicalize [file|-] [-i | --check]  # the mdformat round-trip .cedit/base/ stores
+cedit md ast [file|-] [--hashes] [--raw]       # the parse tree, indented
+cedit md json [file|-] [--tokens | --tree] [--raw]   # the same, as JSON
+cedit md from-json [file|-]                    # a --tokens stream back to Markdown
+cedit md blocks [file|-] [--json]              # the edit blocks the merge keys on
+```
+
+It is a *view* on the frozen core below, not part of the model: nothing here
+reads or writes state, so no rule in this document constrains it beyond the
+exit codes. It exists because the *Reuse rules* make `mdcore/` unobservable —
+see [USERGUIDE.md](USERGUIDE.md) §5.7.
+
 One entry point, same subcommand set for a human and a future CI job. Exit
 codes: 0 clean, 1 unresolved conflicts exist (a sync that recorded them, a
-status that sees them), 2 errors. A doc with open conflicts refuses to
-sync again until they are resolved.
+status that sees them), 2 errors. `md canonicalize --check` is the one
+exception to that reading of 1, and a deliberately narrow one — it still means
+*a human needs to look at this file*, never *this is broken*. A doc with open
+conflicts refuses to sync again until they are resolved.
 
 ## Reuse rules — what must not fork
 
