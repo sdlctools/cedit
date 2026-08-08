@@ -25,6 +25,9 @@ import re
 import sys
 from dataclasses import dataclass
 
+from .mdcore.utils import markdown_to_ast
+from .mdcore import tree_diff
+
 
 @dataclass(frozen=True)
 class LinkRef:
@@ -35,6 +38,120 @@ class LinkRef:
     title: str | None
 
 
+# Token types that contain non-prose content where definitions should NOT be detected
+_NON_PROSE_TYPES = frozenset({
+    "fence",         # fenced code blocks
+    "code_block",    # indented code blocks
+    "html_block",    # HTML blocks
+    "front_matter",  # YAML front matter
+})
+
+
+def _non_prose_line_ranges(md: str) -> list[tuple[int, int]]:
+    """Return line ranges (1-based, inclusive) of non-prose regions.
+
+    Definitions inside these regions are not lost during canonicalisation
+    (code blocks are preserved byte-for-byte, HTML blocks pass through),
+    so we exclude them from detection.
+    """
+    ranges = []
+    for token in markdown_to_ast(md):
+        if token.type in _NON_PROSE_TYPES and token.map:
+            # map is [start_line, end_line] 0-based, end is exclusive
+            # Convert to 1-based inclusive range
+            start = token.map[0] + 1
+            end = token.map[1]  # already 1-based after +1 to inclusive
+            if start <= end:
+                ranges.append((start, end))
+    return ranges
+
+
+def _line_in_ranges(line: int, ranges: list[tuple[int, int]]) -> bool:
+    """Check if a line number falls within any of the ranges."""
+    for start, end in ranges:
+        if start <= line <= end:
+            return True
+    return False
+
+
+def _find_link_ref_defs(md: str) -> dict[str, LinkRef]:
+    """Find all link reference definitions in the markdown source.
+
+    Scans the raw source but excludes definitions inside non-prose regions
+    (code blocks, HTML blocks, front matter) by consulting the AST.
+    """
+    non_prose = _non_prose_line_ranges(md)
+
+    # Pattern for link reference definitions: [label]: url "title" or 'title'
+    # Title is optional, and url can be in <>
+    # Allows both single and double quoted titles
+    ref_pattern = re.compile(
+        r'^\s*\[([^\]]+)\]\s*:\s*(?:<([^>]+)>|([^\s]+))'
+        r'(?:\s+(?:"([^"]*)"|\'([^\']*)\'))?\s*$'
+    )
+
+    definitions = {}
+    for i, line in enumerate(md.split('\n'), 1):
+        # Skip lines inside non-prose regions
+        if _line_in_ranges(i, non_prose):
+            continue
+        match = ref_pattern.match(line)
+        if match:
+            label = match.group(1)
+            url = match.group(2) or match.group(3)
+            title = match.group(4) or match.group(5)
+            definitions[label] = LinkRef(line=i, label=label, url=url, title=title)
+    return definitions
+
+
+def _find_used_refs(md: str, definitions: dict[str, LinkRef]) -> set[str]:
+    """Find all used reference labels in the markdown source.
+
+    Scans only inline tokens (excludes code blocks, HTML blocks, front matter).
+    Returns the set of labels that are actually referenced.
+    """
+    if not definitions:
+        return set()
+
+    used = set()
+    for token in markdown_to_ast(md):
+        # Only inline tokens carry prose where references can be used
+        if token.type != "inline" or not token.content:
+            continue
+
+        src = token.content
+
+        # Look for full reference links: [text][label]
+        # Skip if preceded by ! (image syntax)
+        for m in re.finditer(r'(?<!\!)\[([^\]]+)\]\s*\[([^\]]+)\]', src):
+            label = m.group(2)
+            if label in definitions:
+                used.add(label)
+
+        # Look for shortcut reference links: [label]
+        # Must not be preceded by ! (image) or followed by ( (inline link)
+        # Must not be a definition line (followed by :)
+        for m in re.finditer(r'(?<!\!)\[([^\]]+)\]', src):
+            label = m.group(1)
+            if not label or label in ('', ' '):
+                continue
+            start, end = m.span()
+
+            # Skip if this is a definition: [label]:
+            if end < len(src) and src[end] == ':':
+                continue
+
+            # Skip if followed by ( — inline link [text](url)
+            if end < len(src) and src[end] == '(':
+                continue
+
+            # If the label matches a definition, count it as used
+            if label in definitions:
+                used.add(label)
+
+    return used
+
+
 def find_link_refs(md: str) -> tuple[dict[str, LinkRef], set[str]]:
     """Find all link reference definitions and identify which are used.
 
@@ -42,120 +159,14 @@ def find_link_refs(md: str) -> tuple[dict[str, LinkRef], set[str]]:
     - all_definitions maps label -> LinkRef
     - used_labels is the set of labels actually referenced in the text
 
-    This is a heuristic detection - we look for patterns that suggest a
-    reference is being used, but we may have false positives or negatives.
-    The key goal is to warn about definitions that are definitely unused.
+    Uses the parser's AST to exclude non-prose regions (code blocks, HTML
+    blocks, front matter) from definition scanning, so definitions inside
+    those regions are correctly ignored — they are NOT lost during
+    canonicalisation. Usage tracking also uses the AST's inline tokens,
+    so references inside code blocks are not counted as "used".
     """
-    # Pattern for link reference definitions: [label]: url "title"
-    # Title is optional, and url can be in <>
-    ref_pattern = re.compile(
-        r'^\s*\[([^\]]+)\]\s*:\s*(?:<([^>]+)>|([^\s]+))\s*(?:"([^"]*)")?\s*$'
-    )
-
-    definitions = {}
-    used = set()
-
-    lines = md.split('\n')
-    in_code_block = False
-
-    # First pass: find all definitions
-    for i, line in enumerate(lines, 1):
-        match = ref_pattern.match(line)
-        if match:
-            label = match.group(1)
-            url = match.group(2) or match.group(3)
-            title = match.group(4)
-            definitions[label] = LinkRef(line=i, label=label, url=url, title=title)
-
-    if not definitions:
-        return {}, set()
-
-    # Second pass: find all used references
-    # We use a simple heuristic: look for [label] patterns that are likely references
-    for i, line in enumerate(lines, 1):
-        # Track code block state
-        if line.startswith('```') or line.startswith('~~~'):
-            in_code_block = not in_code_block
-            continue
-        if in_code_block:
-            continue
-
-        # Skip if this line is a definition
-        if ref_pattern.match(line):
-            continue
-
-        # Look for reference-style links [text][label]
-        # This is the clearest signal that a reference is being used
-        # But skip if preceded by ! (image syntax)
-        pos = 0
-        while pos < len(line):
-            # Find patterns like [text][label]
-            match = re.search(r'\[([^\]]+)\]\s*\[([^\]]+)\]', line[pos:])
-            if not match:
-                break
-
-            full_match_start = pos + match.start()
-            label = match.group(2)
-
-            # Check if preceded by ! (image syntax)
-            if full_match_start > 0 and line[full_match_start-1] == '!':
-                pos = full_match_start + len(match.group(0))
-                continue
-
-            if label in definitions:
-                used.add(label)
-
-            pos = full_match_start + len(match.group(0))
-
-        # Look for shortcut reference-style links [label]
-        # These are harder to detect reliably, so we use a simple heuristic:
-        # [label] followed by punctuation, whitespace, or end of line
-        # and not preceded by ! (which would make it an image)
-        pos = 0
-        while pos < len(line):
-            # Find the next [
-            open_bracket = line.find('[', pos)
-            if open_bracket == -1:
-                break
-
-            # Check if preceded by ! (image syntax)
-            if open_bracket > 0 and line[open_bracket-1] == '!':
-                pos = open_bracket + 1
-                continue
-
-            # Find the matching ]
-            close_bracket = line.find(']', open_bracket)
-            if close_bracket == -1:
-                pos = open_bracket + 1
-                continue
-
-            # Extract the label
-            label = line[open_bracket+1:close_bracket]
-            if not label or label in ('', ' '):
-                pos = close_bracket + 1
-                continue
-
-            # Check if this is a reference definition [label]:
-            if close_bracket + 1 < len(line) and line[close_bracket+1] == ':':
-                pos = close_bracket + 1
-                continue
-
-            # Check if followed by ( which would make it an inline link [text](url)
-            if close_bracket + 1 < len(line) and line[close_bracket+1] == '(':
-                pos = close_bracket + 1
-                continue
-
-            # If the label matches a definition, count it as used
-            if label in definitions:
-                # Additional check: make sure this isn't part of a longer pattern
-                # by checking what comes after the ]
-                after = close_bracket + 1
-                if after >= len(line) or not line[after].isalnum():
-                    # Followed by whitespace, punctuation, or end of line
-                    used.add(label)
-
-            pos = close_bracket + 1
-
+    definitions = _find_link_ref_defs(md)
+    used = _find_used_refs(md, definitions)
     return definitions, used
 
 
@@ -182,7 +193,10 @@ def warn_link_refs(md: str, label: str, *, stream=None) -> list[LinkRef]:
           f"would be lost during canonicalisation", file=out)
 
     for ref in unused:
-        print(f"    line {ref.line}: [{ref.label}]: {ref.url}", file=out)
+        line = f"    line {ref.line}: [{ref.label}]: {ref.url}"
+        if ref.title:
+            line += f" \"{ref.title}\""
+        print(line, file=out)
 
     print("    Link reference definitions (e.g., '[label]: https://...') are "
           "inlined when used,", file=out)

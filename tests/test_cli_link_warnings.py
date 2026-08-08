@@ -88,3 +88,60 @@ def test_canonicalize_no_warning_when_no_refs(capsys):
 
     finally:
         os.unlink(test_file)
+
+
+def test_canonicalize_no_warning_for_def_in_fenced_code_block(capsys):
+    """A definition inside a fenced code block does NOT produce a warning.
+
+    Canonicalisation preserves code blocks byte-for-byte.
+    """
+    import tempfile
+    import os
+
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+        f.write('```\n')
+        f.write('[def_in_code]: https://example.com\n')
+        f.write('```\n')
+        f.write('\n')
+        f.write('Text.\n')
+        test_file = f.name
+
+    try:
+        args = SimpleNamespace(file=test_file, check=False, in_place=False)
+        cmd_md_canonicalize(args)
+
+        captured = capsys.readouterr()
+        assert captured.err == ''  # No warning
+
+        # Output preserves the code block
+        assert '[def_in_code]:' in captured.out
+
+    finally:
+        os.unlink(test_file)
+
+
+def test_canonicalize_warns_for_single_quote_title_definition(capsys):
+    """A definition with single-quoted title DOES produce a warning.
+
+    mdformat drops it on canonicalise.
+    """
+    import tempfile
+    import os
+
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+        f.write("[u2]: https://x.com 'single quoted title'\n")
+        f.write('\n')
+        f.write('Text.\n')
+        test_file = f.name
+
+    try:
+        args = SimpleNamespace(file=test_file, check=False, in_place=False)
+        cmd_md_canonicalize(args)
+
+        captured = capsys.readouterr()
+        assert 'warning' in captured.err
+        assert 'u2' in captured.err
+        assert 'single quoted title' in captured.err  # title appears in warning
+
+    finally:
+        os.unlink(test_file)

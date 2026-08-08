@@ -31,6 +31,14 @@ STABLE = [
     # Paragraphs without rewrapping
     ("A long line that is not rewrapped because wrap is 'keep'\n",
      "Long lines are not rewrapped"),
+
+    # Definitions in fenced code blocks are preserved (not dropped)
+    ("```\n[def]: https://example.com\n```\n",
+     "Fenced code block with definition is stable"),
+
+    # Definitions in HTML blocks are preserved
+    ("<div>\n[def]: https://example.com\n</div>\n",
+     "HTML block with definition is stable"),
 ]
 
 
@@ -45,6 +53,16 @@ TRANSFORMED = [
     ("[unused]: https://example.com\n\nText.\n",
      "Text.\n",
      "Unused link references are dropped"),
+
+    # Unused definition with single-quoted title is dropped
+    ("[u2]: https://x.com 'single quoted title'\n\nText.\n",
+     "Text.\n",
+     "Unused single-quoted-title definition is dropped"),
+
+    # Indented code blocks become fenced code blocks
+    ("    [def]: https://example.com\n",
+     "```\n[def]: https://example.com\n```\n",
+     "Indented code block becomes fenced"),
 
     # Multiple spaces collapsed
     ("a  b\n", "a b\n", "Multiple spaces are collapsed"),

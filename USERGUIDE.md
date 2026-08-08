@@ -1759,7 +1759,6 @@ $ cedit md canonicalize
 [ref]: https://example.com
 
 Link to [ref].
-^
 Link to [ref](https://example.com).
 ```
 
@@ -1768,7 +1767,7 @@ warning. cedit detects this and warns you:
 
 ```console
 $ cedit md canonicalize docs/LINKS.md
- docs/LINKS.md: warning: 1 link reference definition(s) would be lost during canonicalisation
+docs/LINKS.md: warning: 1 link reference definition(s) would be lost during canonicalisation
     line 1: [unused]: https://example.com/never-used
     Link reference definitions (e.g., '[label]: https://...') are inlined when used,
     but unused definitions are silently dropped. Either use the reference or convert it

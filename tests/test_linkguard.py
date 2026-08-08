@@ -195,3 +195,102 @@ def test_warning_detects_what_will_be_lost():
     canonical = canonicalise(md)
     assert "[unused]:" not in canonical
     assert "[used](https://example.com)" in canonical
+
+
+# --------------------------------------------------------------------------
+# Regression tests for issues found in review
+# --------------------------------------------------------------------------
+
+
+def test_definition_in_fenced_code_block_not_warned():
+    """A definition inside a fenced code block is NOT warned about.
+
+    Canonicalisation preserves code blocks byte-for-byte, so the definition
+    is not lost. This was a false positive in the original implementation.
+    """
+    from cedit.blocks import canonicalise
+
+    md = """```
+[def_in_code]: https://example.com
+```
+
+Text."""
+    defs, used = find_link_refs(md)
+    # Should NOT find the definition inside the code block
+    assert defs == {}
+    assert used == set()
+
+    # Verify canonicalisation preserves it
+    canonical = canonicalise(md)
+    assert "[def_in_code]:" in canonical
+
+
+def test_definition_in_indented_code_block_not_warned():
+    """A definition inside an indented code block is NOT warned about.
+
+    Canonicalisation preserves indented code blocks byte-for-byte.
+    """
+    from cedit.blocks import canonicalise
+
+    md = """    [def_in_indented]: https://example.com
+
+Text."""
+    defs, used = find_link_refs(md)
+    assert defs == {}
+    assert used == set()
+
+    canonical = canonicalise(md)
+    assert "[def_in_indented]:" in canonical
+
+
+def test_definition_in_html_block_not_warned():
+    """A definition inside an HTML block is NOT warned about.
+
+    HTML blocks pass through canonicalisation unchanged.
+    """
+    from cedit.blocks import canonicalise
+
+    md = """<div>
+[def_in_html]: https://example.com
+</div>
+
+Text."""
+    defs, used = find_link_refs(md)
+    assert defs == {}
+    assert used == set()
+
+    canonical = canonicalise(md)
+    assert "[def_in_html]:" in canonical
+
+
+def test_single_quote_title_definition_is_warned():
+    """A definition with single-quoted title IS warned about.
+
+    mdformat treats single-quoted titles the same as double-quoted,
+    and drops the definition on canonicalisation. This was a false negative
+    in the original implementation (regex only accepted double quotes).
+    """
+    from cedit.blocks import canonicalise
+
+    md = """[u2]: https://x.com 'single quoted title'
+
+Text."""
+    # The definition should be detected
+    defs, used = find_link_refs(md)
+    assert "u2" in defs
+    assert defs["u2"].title == "single quoted title"
+    assert "u2" not in used  # unused
+
+    # The warning should fire
+    import sys
+    from io import StringIO
+    out = StringIO()
+    unused = warn_link_refs(md, "test.md", stream=out)
+    assert len(unused) == 1
+    assert unused[0].label == "u2"
+    assert "single quoted title" in out.getvalue()
+
+    # Verify canonicalisation drops it
+    canonical = canonicalise(md)
+    assert "[u2]:" not in canonical
+    assert "https://x.com" not in canonical
