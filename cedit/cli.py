@@ -321,7 +321,8 @@ def cmd_resolve(args) -> int:
               f"the file as recorded (edited since?) — fix the text by hand, "
               f"then `resolve --take local`", file=sys.stderr)
         return 2
-    splice_block(target, conflict.upstream_text or "", conflict.upstream_info)
+    splice_block(local, target, conflict.upstream_text or "",
+                 conflict.upstream_info)
     rendered = render_verified(local, label=doc)
     atomic_write_text(state.doc_path(doc), rendered)
     del entry["conflicts"][conflict.key]

@@ -230,7 +230,7 @@ def merge(base_md: str, local_md: str, upstream_md: str, *,
             if edit is None:
                 result.unchanged += 1
                 continue
-            _splice_or_conflict(edit, fate, result)
+            _splice_or_conflict(upstream, edit, fate, result)
         elif fate.status == EDITED:
             if edit is None:
                 result.updated += 1
@@ -238,7 +238,7 @@ def merge(base_md: str, local_md: str, upstream_md: str, *,
             # Both sides changed it: keep the local text in the working file
             # (never clobber the adaptation), record all three versions.
             result.conflicts.append(_conflict(edit, fate, CONFLICT))
-            _splice(edit, fate.other)
+            _splice(upstream, edit, fate.other)
         else:  # DELETED upstream
             if edit is None:
                 result.removed += 1
@@ -249,13 +249,14 @@ def merge(base_md: str, local_md: str, upstream_md: str, *,
     return result
 
 
-def _splice(edit: LocalEdit, target: Block) -> bool:
+def _splice(doc: ParsedDoc, edit: LocalEdit, target: Block) -> bool:
     from .blocks import splice_block
-    return splice_block(target, edit.local_text, edit.local_info)
+    return splice_block(doc, target, edit.local_text, edit.local_info)
 
 
-def _splice_or_conflict(edit: LocalEdit, fate: Fate, result: MergeResult) -> None:
-    if _splice(edit, fate.other):
+def _splice_or_conflict(doc: ParsedDoc, edit: LocalEdit, fate: Fate,
+                        result: MergeResult) -> None:
+    if _splice(doc, edit, fate.other):
         result.reapplied.append(edit)
     else:
         # Nothing to splice into (empty-cell unit) — degrade to a conflict

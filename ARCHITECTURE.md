@@ -40,11 +40,13 @@ cli.cmd_sync
 ├── entry["conflicts"] guard                refuse to sync a doc with open conflicts
 ├── state.read_base(doc)                    B — the canonical base snapshot
 ├── blocks.canonicalise(upstream file)      U — mdformat round-trip, then compared to B
-├── mathguard.warn_fragile_math(U src, L)   stderr only; the round-trip above already
-│                                           rewrote any `$…$` math, and nothing below
-│                                           this line can see that it did
+│   └── mathguard.protect / restore          `$…$` math swapped for a sentinel and back
+├── mathguard.warn_fragile_math(U src, L)   stderr only, and only for spans `protect`
+│                                           could not locate — silent on every document
+│                                           measured
 └── merge3.merge(B, L, U)
-    ├── blocks.parse_doc  ×3                → ParsedDoc(canonical, tokens, root, blocks)
+    ├── blocks.parse_doc  ×3                → ParsedDoc(canonical, tokens, root, blocks, math)
+    │   ├── mathguard.protect                the tree is built over the *protected* text
     │   ├── mdcore.utils.markdown_to_ast     the one pinned parser
     │   └── mdcore.tree_diff.hash_tree       Merkle hash per node → Block.hash
     ├── merge3.local_edits(B, L)            the overlay
@@ -53,9 +55,10 @@ cli.cmd_sync
     │   └── raise merge3.StructuralDrift      … aborts here, before anything is written
     ├── align.align(B.blocks, U.blocks)     what upstream did
     ├── one pass over B.blocks              the merge matrix (below)
-    │   └── blocks.splice_block(U-node, local_text, local_info)
+    │   └── blocks.splice_block(U, U-node, local_text, local_info)
     └── blocks.render_verified(U)           re-parse own output, compare block_signature
                                             → raise blocks.StructureMismatch, or the Markdown
+                                            (restored through U.math on the way out)
 ```
 
 then, back in `cmd_sync` and **in this order** (`cli.py:195-212`):
@@ -115,7 +118,9 @@ shapes:
 
 Both sources are read into a variable and passed through
 `mathguard.warn_fragile_math` before `parse_doc` sees them — the upstream
-file under its `--from` label, the working copy under the doc's own. Then
+file under its `--from` label, the working copy under the doc's own. The math
+itself is preserved by `canonicalise`/`parse_doc`, so that call only reports
+what protection could not reach. Then
 `write_base` → `set_entry` → `save_manifest` → `set_overlay` →
 `save_overlay`.
 
@@ -143,9 +148,11 @@ one `--from <dir>` serves every tracked document at once.
 
 Between 5 and 6 both sources go through `mathguard.warn_fragile_math` —
 *after* the up-to-date short-circuit, so a no-op sync stays silent, and
-before `merge`, because by then the canonical form has already been taken
-and no later stage can tell that a `$…$` span was rewritten. The warning is
-stderr text and changes no exit code.
+before `merge`, because by then the canonical form has already been taken.
+It is the fallback alarm only: `canonicalise` and `parse_doc` carry every
+locatable `$…$` span through untouched, so the call fires solely on spans
+protection could not reach. The warning is stderr text and changes no exit
+code.
 
 `--dry-run` / `-n` reports (`result.as_text()` plus every conflict) and
 returns before the first write — the math warning still fires, which is the
@@ -237,7 +244,7 @@ on it, and per
 
 | Verb | Emits |
 | --- | --- |
-| `canonicalize [file\|-]` | the mdformat round-trip — the exact bytes `.cedit/base/<doc>` would hold. `-i` rewrites via `store.atomic_write_text`; `--check` writes nothing and exits 1 when the input is not already canonical (mutually exclusive with `-i`). All three modes call `mathguard.warn_fragile_math` on the input first — stderr only, so stdout stays the data channel |
+| `canonicalize [file\|-]` | the mdformat round-trip — the exact bytes `.cedit/base/<doc>` would hold, `$…$` math included and unmoved. `-i` rewrites via `store.atomic_write_text`; `--check` writes nothing and exits 1 when the input is not already canonical (mutually exclusive with `-i`). All three modes call `mathguard.warn_fragile_math` on the input first — stderr only, so stdout stays the data channel, and silent unless a span could not be protected |
 | `ast [file\|-]` | indented tree dump; each line is `type [tag] [info=] [[kind]] [#hash] ["preview"]`. `--hashes` adds the Merkle hash, `--raw` skips canonicalisation |
 | `json [file\|-]` | `--tokens` (default) the flat `Token.as_dict()` stream; `--tree` a nested dict carrying `hash` and `kind` |
 | `from-json [file\|-]` | Markdown rendered from a `--tokens` stream |
@@ -465,21 +472,35 @@ command from the first — a distinction translation never needed.
 
 `canonical: str`, `tokens: list` (mutable and renderable — what the splice
 edits and `render_verified` renders), `root: SyntaxTreeNode`,
-`blocks: list[Block]`. `doc_hash` (property) is `root.h`, the Merkle root
-recorded as `base_doc_hash` in the manifest.
+`blocks: list[Block]`, `math: dict[str, str]`. `doc_hash` (property) is
+`root.h`, the Merkle root recorded as `base_doc_hash` in the manifest.
+
+`math` is the document's sentinel map (`mathguard`). The split it encodes is
+the thing to hold on to: **`tokens` and every hash are over the protected
+text; `canonical` and every `Block.text` are restored.** Sentinels therefore
+never reach an overlay entry, a conflict record or `cedit md blocks`, and the
+renderer never sees a backslash it would escape.
 
 ### `canonicalise` and `parse_doc`
 
-`canonicalise(md)` (`blocks.py:96`) is `ast_to_markdown(markdown_to_ast(md))`
-— the mdformat round-trip **every hash in `.cedit/` is taken over**.
+`canonicalise(md)` (`blocks.py:96`) is the mdformat round-trip **every hash in
+`.cedit/` is taken over**, wrapped in `mathguard.protect` / `restore`: the
+round-trip runs over sentinels and the original `$…$` bytes go back into the
+result, so fragile math is byte-exact through it (CED-27).
 
-`parse_doc(md, *, canonical=False)` (`blocks.py:101`) canonicalises unless
-told the input already is (`canonical=True` is used for base snapshots, which
-were written canonical), parses, builds the tree, calls `tree_diff.hash_tree`
-to annotate every node with `.h`, then walks: a unit or an `OPAQUE` node
-becomes a `Block` and the walk does **not** descend into it; anything else
-recurses into its children. Occurrence indices are assigned in a second pass
-over the flat list, so they follow document order.
+`parse_doc(md, *, canonical=False)` (`blocks.py:101`) protects, canonicalises
+unless told the input already is (`canonical=True` is used for base snapshots,
+which were written canonical), parses, builds the tree, calls
+`tree_diff.hash_tree` to annotate every node with `.h`, then walks: a unit or
+an `OPAQUE` node becomes a `Block` and the walk does **not** descend into it;
+anything else recurses into its children. Occurrence indices are assigned in a
+second pass over the flat list, so they follow document order.
+
+Both routes to the same document reach the same sentinels — `protect` is the
+inverse of `restore`, and a sentinel is derived from the span it stands for —
+so a base snapshot parsed with `canonical=True` and a working copy parsed
+without it still hash alike. That is what keeps the alignment working over a
+document containing math.
 
 This walk is the whole reason the merge is "flat": containers (lists,
 blockquotes, tables) are traversed but never themselves blocks.
@@ -496,17 +517,21 @@ parallel and returns a single human-readable path to the first divergence —
 extra child, missing child, or differing head. Only used to build the
 `StructureMismatch` message.
 
-### `splice_block(block, text, info="") -> bool` (`blocks.py:177`)
+### `splice_block(doc, block, text, info="") -> bool` (`blocks.py:177`)
 
-Replaces the block's editable content **in its tree, in place**, and returns
-`False` when there is nothing to splice into.
+Replaces the block's editable content **in `doc`'s tree, in place**, and
+returns `False` when there is nothing to splice into. `doc` is there for the
+sentinel map: `text` arrives restored (it came from a `Block.text` or a
+conflict record), so its own math is protected on the way in and registered
+with `doc.math`, which is what lets `render_verified` put it back.
 
 - **Opaque** → set `token.content = text`, and `token.info = info` as well when
-  the node is a `fence`. Always `True`.
+  the node is a `fence`. Always `True`, and no protection — mdformat writes a
+  fence, an HTML block or front matter out verbatim, backslashes included.
 - **Unit** → find the `inline` child; **`None` → return `False`** (an empty
   table cell — the caller decides what that means, and
-  `merge3._splice_or_conflict` turns it into a conflict). For a `th`/`td`,
-  collapse whitespace to a single line first. Re-tokenize with
+  `merge3._splice_or_conflict` turns it into a conflict). Protect the text,
+  and for a `th`/`td` collapse whitespace to a single line. Re-tokenize with
   `mdcore.utils.parse_inline`, so text starting with `- ` stays a paragraph
   instead of becoming a list. If the original inline started with a task-list
   checkbox `html_inline`, that token is re-inserted at position 0 — it is
@@ -519,69 +544,109 @@ re-derived from the replacement text. That is the reassembly invariant.
 
 ### `render_verified(doc, *, label) -> str` (`blocks.py:206`)
 
-Renders `doc.tokens` (post-splice), takes `block_signature` of
-`doc.canonical` and of the rendered output, and raises `StructureMismatch`
-with `_first_difference` when they differ. A splice-only design's one
-invisible failure mode is a replacement that re-parses into different block
-structure; this is the gate, and it runs on **every** render — the merge
-(`merge3.py:248`) and `resolve --take upstream` (`cli.py:304`) alike.
+Renders `doc.tokens` (post-splice), **restores `doc.math` into the output**,
+takes `block_signature` of `doc.canonical` and of the restored output, and
+raises `StructureMismatch` with `_first_difference` when they differ. A
+splice-only design's one invisible failure mode is a replacement that
+re-parses into different block structure; this is the gate, and it runs on
+**every** render — the merge (`merge3.py:248`) and `resolve --take upstream`
+(`cli.py:304`) alike.
 
 **What it structurally cannot catch**, and why `mathguard` exists: a rewrite
 *inside* one block's inline content. `block_signature` stops at `inline` by
 design, and both signatures are taken over text the round-trip has already
-produced, so `$\rightarrow$` → `$\\rightarrow$` compares equal on both sides
-and passes. `tests/test_mathguard.py::test_render_and_verify_cannot_catch_this`
-pins that, so the claim stays measured rather than asserted.
+produced, so an unprotected `$\rightarrow$` → `$\\rightarrow$` would compare
+equal on both sides and pass. That is why the math is kept out of the
+renderer's way rather than checked afterwards;
+`tests/test_mathguard.py::test_the_render_path_preserves_it_too` pins the
+render path itself, so the claim stays measured rather than asserted.
 
 ## `cedit/mathguard.py` — the `$...$` math guard
 
-One detector and one reporter, and no other module depends on them; nothing
-here participates in hashing, alignment or the merge.
+A detector, a protector and a reporter. `blocks` is the only importer, and
+nothing here participates in alignment or the merge — but since CED-27 it
+*does* sit on the hashing path, because the tree is built over the text it
+rewrites.
 
 The defect: GitHub renders `$...$` and `$$...$$` as math, the pinned parser
 has no such syntax, and so a backslash inside such a span is ordinary text
-that `ast_to_markdown` correctly escapes — `$\rightarrow$` becomes
+that `ast_to_markdown` correctly escapes — `$\rightarrow$` would become
 `$\\rightarrow$`, which GitHub reads as a *line break inside math*. The page
 changes. Every stage downstream of `canonicalise` is blind to it (see
-`render_verified` above), the hashes are all taken over the rewritten text,
-and cedit exits 0. That is a silent clobber, which invariant 3 forbids.
+`render_verified` above), the hashes would all be taken over the rewritten
+text, and cedit exits 0. That is a silent clobber, which invariant 3 forbids.
+
+CED-26 detected it; **CED-27 prevents it**, by keeping the span out of the
+round-trip altogether:
+
+```
+source ──protect──► sentinel ──parse──► tokens ──render──► ──restore──► canonical
+```
 
 | Symbol | Behaviour |
 | --- | --- |
-| `MathSpan` (`mathguard.py:54`) | frozen dataclass: `line` (1-based), `delim` (`"$"` / `"$$"`), `text` (the run as written) |
-| `_mask_code_spans(src)` (`mathguard.py:67`) | blanks inline code spans to `\x00`, **preserving length** so every later offset stays valid. CommonMark's rule: a run of N backticks is closed by the next run of exactly N; an unmatched run is literal text; `\` escapes the next character |
-| `_matching_backticks(src, start, run)` (`mathguard.py:96`) | end offset of the next backtick run of exactly `run`, or `None` |
-| `_inline_close(masked, open_at)` (`mathguard.py:112`) | GitHub's inline delimiter rules — no whitespace after the opener, none before the closer, no newline inside. This is what keeps `$100 and $200` from being a span at all |
-| `_spans(masked)` (`mathguard.py:136`) | yields `(delim, start, end)`; `$$` is tried first and may cross lines, `$` may not |
-| `find_fragile_math(md)` (`mathguard.py:163`) | the entry point: every span whose **content holds a backslash**, over the *source* as written |
-| `warn_fragile_math(md, label, *, stream=None)` (`mathguard.py:197`) | prints the report to stderr and returns the spans. **Never touches the exit code** |
+| `MathSpan` (`mathguard.py:88`) | frozen dataclass: `line` (1-based), `delim` (`"$"` / `"$$"`), `text` (the run as written), `start`/`end` (absolute source offsets, `None` when the span could not be located) |
+| `Protected` (`mathguard.py:296`) | frozen dataclass: `text` (the source with sentinels in place), `spans` (sentinel → original), `unprotected` (the `MathSpan`s left alone). `.restore()` is the inverse |
+| `_mask_code_spans(src)` (`mathguard.py:106`) | blanks inline code spans to `\x00`, **preserving length** so every later offset stays valid. CommonMark's rule: a run of N backticks is closed by the next run of exactly N; an unmatched run is literal text; `\` escapes the next character |
+| `_matching_backticks(src, start, run)` (`mathguard.py:135`) | end offset of the next backtick run of exactly `run`, or `None` |
+| `_inline_close(masked, open_at)` (`mathguard.py:151`) | GitHub's inline delimiter rules — no whitespace after the opener, none before the closer, no newline inside. This is what keeps `$100 and $200` from being a span at all |
+| `_spans(masked)` (`mathguard.py:175`) | yields `(delim, start, end)`; `$$` is tried first and may cross lines, `$` may not |
+| `_line_offsets(md)` (`mathguard.py:202`) | absolute offset of every line start |
+| `_content_line_offsets(...)` (`mathguard.py:211`) | where each line of an inline token's `content` sits in the source. A shared `cursor` per source line resolves the cells of one table row left to right instead of all matching the first |
+| `_absolute(offsets, content, pos)` (`mathguard.py:239`) | a content offset → a source offset |
+| `find_fragile_math(md)` (`mathguard.py:247`) | every span whose **content holds a backslash**, over the *source* as written, each with the offsets `protect` needs |
+| `_sentinel(text, doc, taken)` (`mathguard.py:310`) | `ceditmath` + 16 hex of `sha256(span)`, counted up until it collides with nothing in `doc` and with no other span |
+| `protect(md)` (`mathguard.py:328`) | → `Protected`. Rewrites the source at the offsets, never by matching the span text |
+| `restore(text, spans)` (`mathguard.py:352`) | puts the originals back, **longest sentinel first** |
+| `warn_fragile_math(md, label, *, stream=None)` (`mathguard.py:368`) | reports only `protect(md).unprotected` to stderr and returns it. **Never touches the exit code** |
 
-Two design points carry the precision claim:
+Design points, and the three gaps the CED-27 prototype had to close:
 
 - **It iterates `inline` tokens, not lines.** Only an `inline` token carries
   the raw source of its own region (`.content`) together with the line it
   starts on (`.map`), so fences, indented code, HTML blocks and front matter
   are excluded *for free* — they are simply other token types. Table cells
-  and headings are included for free by the same rule.
+  and headings are included for free by the same rule. It also bounds a span
+  to one inline token, so a `$$` run can never swallow a blank line and
+  merge two paragraphs when it is replaced.
 - **A backslash is the whole trigger.** Every `$`-bearing construct without
   one is byte-stable today, prose dollar amounts included, so the false
   positive surface is small — and `tests/test_mathguard.py` re-measures both
   columns through `canonicalise` on every run rather than trusting the list.
+- **Spans are rewritten by offset, not by `str.replace` on their text.** The
+  same span text may also sit in a fence or a code span, or twice on one
+  line; the offsets distinguish them and text matching does not. The derived
+  offsets are verified against the source (`md[start:end] == text`) before
+  anything is rewritten.
+- **The sentinel is content-derived and collision-checked.** Derived, so the
+  same span always yields the same sentinel — that is what makes `protect`
+  the inverse of `restore` and keeps hashes reproducible across machines and
+  across `parse_doc`'s two routes. Checked, so a document that already
+  contains that literal text gets a different one.
+- **Protection is per span and all-or-nothing.** A span whose offsets cannot
+  be derived is left alone and reported. The reachable case is a `$…$` span
+  in a table cell that also holds `\|`: markdown-it hands the cell back
+  already unescaped, so its content is not in the source verbatim. That, and
+  only that, is what `warn_fragile_math` now prints.
 
-Call sites (all of them are about to write canonicalised bytes):
-`cmd_snapshot` on both sources, `cmd_sync` on both sources after the
-up-to-date short-circuit, `cmd_resolve --take upstream` on the working copy,
-and `mdcli.cmd_md_canonicalize` on its input. `cmd_diff` and `cmd_status`
+Call sites: `blocks.canonicalise`, `blocks.parse_doc`, `blocks.splice_block`
+and `blocks.render_verified` for the protection — between them every path
+that writes. `warn_fragile_math` keeps CED-26's four wirings: `cmd_snapshot`
+on both sources, `cmd_sync` on both sources after the up-to-date
+short-circuit, `cmd_resolve --take upstream` on the working copy, and
+`mdcli.cmd_md_canonicalize` on its input. `cmd_diff` and `cmd_status`
 deliberately stay silent — they write nothing, and `md canonicalize --check`
 is the standalone probe.
 
-Making `$...$` actually parse as math was rejected, not deferred: every
+Making `$...$` actually parse as math is still rejected, not deferred, and
+preserving it is not the same thing — nothing keys on the *contents* of a
+span, and a ```` ```math ```` fence remains the spelling that renders. Every
 published `mdformat-dollarmath` requires `mdformat>=0.7,<0.8` against the
 pinned `mdformat==1.0.0` (pip returns `ResolutionImpossible`), and
 `mdformat-myst`, which has no upper bound, pulls in a second frontmatter
 plugin beside the pinned `mdformat-frontmatter==2.1.2` — a parser-identity
-change, hence a hash move, for a syntax that has a working spelling already.
-The ```` ```math ```` fence round-trips byte for byte today.
+change, hence a hash move across *every* document rather than only the ones
+holding math.
 
 ## `cedit/state.py` — the `.cedit/` directory
 
@@ -744,8 +809,8 @@ names are the durable reference.
 | --- | --- |
 | 1 — `mdcore/` frozen | Convention plus one check: the freeze notices at `mdcore/__init__.py`, `mdcore/tree_diff.py:1-17` and `mdcore/utils.py:1-9`, and SPEC.md's *Reuse rules*. Nothing can catch a *refactor* — review has to — but `tests/parser_contract.py` catches any refactor that changed behaviour |
 | 2 — exact pins | `requirements.txt` (the rationale is in the file itself) → `mdcore/utils.make_parser` (`utils.py:16`) → `blocks.canonicalise` (`blocks.py:96`) → every `Block.hash` and `ParsedDoc.doc_hash` |
-| 3 — no silent clobber | `merge3.merge` (`merge3.py:240-241`) records the conflict **and** splices the local text; `Conflict` carries all three versions (`merge3.py:81`) and `state.set_entry` persists them; `cli.cmd_sync` (`cli.py:159-163`) refuses to sync a doc with open conflicts; `cli.cmd_resolve` (`cli.py:257`) is the only path that takes upstream text. `mathguard.warn_fragile_math`, called from every write path, covers the one clobber the merge cannot see — a `$…$` span the round-trip rewrites *inside* a block |
-| 4 — exit codes | `cli.main` (`cli.py:377-379`) maps four exception types to 2; `cli.cmd_sync` (`cli.py:214-216`) and `cli.cmd_status` (`cli.py:243`) are the only sources of 1. `mathguard` is the deliberate counter-example: it reports a real defect and still returns nothing, because a document that grew a math span must keep the code it had |
+| 3 — no silent clobber | `merge3.merge` (`merge3.py:240-241`) records the conflict **and** splices the local text; `Conflict` carries all three versions (`merge3.py:81`) and `state.set_entry` persists them; `cli.cmd_sync` (`cli.py:159-163`) refuses to sync a doc with open conflicts; `cli.cmd_resolve` (`cli.py:257`) is the only path that takes upstream text. The one clobber the merge cannot see — a `$…$` span the round-trip rewrites *inside* a block — is prevented rather than reported: `mathguard.protect`/`restore` in `blocks.canonicalise`, `parse_doc`, `splice_block` and `render_verified`, with `warn_fragile_math` left on the four write paths for the spans protection cannot reach |
+| 4 — exit codes | `cli.main` (`cli.py:377-379`) maps four exception types to 2; `cli.cmd_sync` (`cli.py:214-216`) and `cli.cmd_status` (`cli.py:243`) are the only sources of 1. `mathguard` is the deliberate counter-example: it reports a real defect and still returns nothing. Preserving the math is what makes that comfortable rather than merely contractual — there is now nothing to fail on |
 | 5 — replacements only | `merge3.local_edits` (`merge3.py:184-187`) raises `StructuralDrift` on any local insert/delete/move, reported per block by `_describe_structural` (`merge3.py:155`); the merged document is U's tree rendered by `render_verified(upstream, …)` (`merge3.py:248`), and `blocks.splice_block` is the only mutation. `cli.cmd_resolve` refuses `--take local` on an orphan (`cli.py:268-273`) for the same reason |
 
 ## Tests
@@ -775,18 +840,30 @@ bad input, parametrised over the verbs in
 holds the stateless claim: pointed at a `--state-dir`, the verbs must not
 create it.
 
-`tests/test_mathguard.py` holds the math guard to the two claims that make
-it worth having. Precision: every case in the `CORRUPTED` and `STABLE` lists
-is re-measured through `canonicalise` on each run
-(`test_the_corrupting_column_really_is_corrupted`,
-`test_the_stable_column_is_byte_stable`) *before* the detector is asked about
+`tests/test_mathguard.py` holds the math guard to the claims that make it
+worth having. Preservation: every case in the `FRAGILE` and `STABLE` lists is
+re-measured through `canonicalise` on each run
+(`test_fragile_math_round_trips_byte_exact`,
+`test_the_stable_column_is_byte_stable`,
+`test_canonicalisation_is_idempotent`) *before* the detector is asked about
 it, so a parser change that moved a case between columns fails here rather
-than quietly invalidating the guard. And necessity:
-`test_render_and_verify_cannot_catch_this` shows the corrupting round-trip
-passing `render_verified` with equal block signatures — the reason a separate
-detector exists at all. `test_the_warning_names_the_label_the_lines_and_the_remedy`
-pins stdout staying empty; `tests/test_cli.py` and `tests/test_mdcli.py` pin
-the exit codes not moving.
+than quietly invalidating the guard. The second write path is covered
+separately — `test_the_render_path_preserves_it_too` runs the same corpus
+through `render_verified`, which is what `sync` and `resolve` actually write,
+and `test_a_splice_carries_math_in_the_text_it_splices_in` covers text that
+arrives by splice rather than by parse.
+`test_blocks_read_as_the_document_does_not_as_sentinels` pins the boundary:
+sentinels stay in the token stream and never reach an overlay entry or a
+conflict record. The three gaps the CED-27 prototype papered over each have
+their own test — offsets rather than text matching
+(`test_spans_are_located_by_offset_not_by_matching_their_text`), a
+collision-checked sentinel
+(`test_the_sentinel_is_inert_and_checked_against_the_document`) and
+idempotence. `test_a_span_that_cannot_be_located_is_reported` and
+`test_an_unlocatable_span_is_left_alone_rather_than_rewritten_wrongly` cover
+the fallback; `tests/test_cli.py` and `tests/test_mdcli.py` pin the three
+write paths end to end, including QA's `sync` reproduction
+(`test_sync_does_not_rewrite_a_math_line_neither_side_touched`).
 
 `tests/test_packaging.py` covers the two packaging facts that rot silently:
 `cedit.__version__` resolving from distribution metadata with a
@@ -845,12 +922,17 @@ same Markdown hashes to, everywhere, retroactively.
 | Change `SIM_THRESHOLD`, `FUZZY_THRESHOLD`, `align`'s passes | no | pairing only — recomputed on every run |
 | Change the merge matrix in `merge3.merge` | no | decides over hashes, does not produce them |
 | Change `splice_block`, `render_verified`, `cli` output, `store`, `state` | no | downstream of hashing |
-| Change anything in `mathguard.py` | no | it reads the source and writes to stderr; it is not on the hashing path at all, and adding a plugin to *fix* `$…$` math instead would be — see the module's closing paragraph |
+| Change `mathguard`'s **detection** (`find_fragile_math`, `_spans`, `_inline_close`, `_mask_code_spans`) | **yes, for documents holding `$…$` math** | detection decides what gets protected, so widening or narrowing it changes the canonical form of exactly those documents — and nothing else. This is how CED-27 itself moved hashes |
+| Change `mathguard`'s **sentinel** (`_PREFIX`, `_DIGEST`, `_sentinel`) | **yes, for documents holding `$…$` math** | the tree is built over the sentinel, so its spelling is a hash input. The canonical *bytes* do not move — `restore` puts the same math back — which makes this the cheaper half of the damage (see hash-stability.md) |
+| Change `mathguard.warn_fragile_math` or the message text | no | stderr only, and downstream of everything |
 
 The first five rows are all invariant-1/2 territory and four of them are in
 frozen code you should not be editing at all — the row exists to say what
-*would* happen, not to license it. Where a hash-moving change is genuinely
-required, it goes through
+*would* happen, not to license it. The two `mathguard` rows are the one
+hash-moving surface *outside* `mdcore/`, and they move hashes for a named
+subset of documents rather than for all of them: measure which, as CED-27
+did, instead of stopping at "hash-moving". Where a hash-moving change is
+genuinely required, it goes through
 [.claude/rules/hash-stability.md](.claude/rules/hash-stability.md): classify
 it, re-record the baseline in the same commit, and say so in the release
 notes.
@@ -940,7 +1022,7 @@ of the work is:
 1. `blocks.parse_doc` (`blocks.py:101`) — the walk already keys off those
    two sets and does not descend into a block, so a new member usually needs
    no change here. Confirm it does not contain nodes you still want walked.
-2. `blocks.splice_block` (`blocks.py:177`) — the mutation. Opaque nodes set
+2. `blocks.splice_block(doc, block, …)` (`blocks.py:177`) — the mutation. Opaque nodes set
    `token.content` (plus `token.info` for a fence); units go through
    `parse_inline`. A kind that is neither needs its own branch, and it must
    return `False` rather than half-splice when there is nothing to write

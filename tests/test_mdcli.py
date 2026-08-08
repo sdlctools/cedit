@@ -100,21 +100,42 @@ def test_check_and_in_place_are_mutually_exclusive():
         cli.main(["md", "canonicalize", "--check", "-i", FIXTURE])
 
 
-def test_canonicalize_warns_about_math_without_moving_the_exit_code(tmp_path, capsys):
+# CED-27, acceptance criterion 2: the write path QA reported. `-i` used to warn
+# on stderr, write `$\\rightarrow$` to disk and exit 0 — a landmine labelled but
+# still armed. Now nothing is rewritten and nothing is said.
+MATH = "Inline $\\rightarrow$ here.\n"
+
+
+def test_canonicalize_leaves_math_intact_on_every_mode(tmp_path, capsys):
     doc = tmp_path / "math.md"
-    doc.write_text("Inline $\\rightarrow$ here.\n", encoding="utf-8")
+    doc.write_text(MATH, encoding="utf-8")
 
     # stdout stays the data channel: the canonical form, and only that.
     rc, out, err = run(["md", "canonicalize", str(doc)], capsys)
     assert rc == 0
-    assert out == "Inline $\\\\rightarrow$ here.\n"
-    assert "dollar-delimited math span(s)" in err
+    assert out == MATH
+    assert err == ""
 
-    # --check keeps its own meaning of 1 — the warning explains it, and the
-    # pair is the gate a CI job wires up (USERGUIDE.md §13).
+    # The document is canonical, so --check says so instead of demanding a
+    # human look at it, and -i writes nothing at all.
     rc, _, err = run(["md", "canonicalize", "--check", str(doc)], capsys)
-    assert rc == 1
-    assert "dollar-delimited math span(s)" in err and "not canonical" in err
+    assert rc == 0 and err == ""
+
+    rc, out, _ = run(["md", "canonicalize", "-i", str(doc)], capsys)
+    assert rc == 0
+    assert "already canonical" in out
+    assert doc.read_text(encoding="utf-8") == MATH
+
+
+def test_canonicalize_in_place_preserves_math_while_it_reformats(tmp_path, capsys):
+    doc = tmp_path / "math.md"
+    doc.write_text("#  Title\n\nNavigate to $\\rightarrow$ **General**.\n",
+                   encoding="utf-8")
+    rc, out, err = run(["md", "canonicalize", "-i", str(doc)], capsys)
+    assert rc == 0
+    assert "canonicalised" in out and err == ""
+    assert doc.read_text(encoding="utf-8") == \
+        "# Title\n\nNavigate to $\\rightarrow$ **General**.\n"
 
 
 # A canonical document already: definitions live at the end, in reference

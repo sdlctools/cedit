@@ -236,31 +236,97 @@ def test_untracked_doc_is_a_clean_error(repo, capsys):
     assert "not tracked" in capsys.readouterr().err
 
 
-# `$\rightarrow$` canonicalises to `$\\rightarrow$`, which GitHub renders as a
-# line break inside math. Nothing downstream can see it (tests/test_mathguard.py),
-# so the CLI has to warn where the bytes are written — and the exit code stays
-# exactly what it was, per invariant 4.
-MATHY = UPSTREAM_V1.replace("Intro paragraph explaining the skill.",
-                            "Intro paragraph, where $\\rightarrow$ means \"then\".")
+# CED-26/CED-27 — `$\rightarrow$` used to canonicalise to `$\\rightarrow$`,
+# which GitHub renders as a line break inside math. CED-26 warned about it;
+# CED-27 preserves it. These are the two stateful write paths (the third,
+# `md canonicalize -i`, is in tests/test_mdcli.py).
+MATH_LINE = "Intro paragraph, where $\\rightarrow$ means \"then\"."
+MATHY = UPSTREAM_V1.replace("Intro paragraph explaining the skill.", MATH_LINE)
 
 
-def test_math_warning_does_not_change_snapshot_or_sync_exit_codes(repo, capsys):
+def test_snapshot_writes_a_base_with_the_math_intact(repo, capsys):
     upstream_file = os.path.join("upstream", DOC)
     write_upstream(repo, MATHY)
 
     assert cli.main(["snapshot", DOC, "--from", upstream_file]) == 0
     captured = capsys.readouterr()
-    assert "dollar-delimited math span(s)" in captured.err
-    assert upstream_file in captured.err
-    assert "```math" in captured.err
-    assert "tracking" in captured.out                     # the run still succeeded
+    assert "tracking" in captured.out
+    assert captured.err == ""                             # nothing left to warn about
 
+    # `.cedit/base/` is what every later merge reads as the truth about
+    # upstream; before CED-27 it held `$\\rightarrow$` from the first snapshot
+    # on, while the working copy still held the correct form.
+    base = (repo / ".cedit" / "base" / DOC).read_text(encoding="utf-8")
+    assert MATH_LINE in base
+    assert read_doc(repo) == base
+
+
+def test_sync_does_not_rewrite_a_math_line_neither_side_touched(repo, capsys):
+    """QA's reproduction, end to end, as a regression test.
+
+    The math line is byte-identical upstream and locally, and upstream's new
+    revision does not go near it. cedit used to report "no conflicts", exit 0,
+    and rewrite that line in the user's document anyway — inventing a change
+    neither side made, which AGENTS.md invariant 3 forbids outright.
+    """
+    upstream_file = os.path.join("upstream", DOC)
+    write_upstream(repo, MATHY)
+    assert cli.main(["snapshot", DOC, "--from", upstream_file]) == 0
     zshify_working_copy(repo)
+    before = read_doc(repo)
+    assert MATH_LINE in before
+
+    # An unrelated upstream edit: a new flag on the create command.
     write_upstream(repo, MATHY.replace('--project "$KEY"',
                                        '--project "$KEY" --type Task'))
-    assert cli.main(["sync", "--from", "upstream"]) == 0   # still clean, still 0
-    err = capsys.readouterr().err
-    assert err.count("dollar-delimited math span(s)") == 2  # upstream and local
+    capsys.readouterr()
+    assert cli.main(["sync", "--from", "upstream"]) == 0
+    captured = capsys.readouterr()
+    assert "no conflicts" in captured.out
+    assert captured.err == ""
+
+    after = read_doc(repo)
+    assert MATH_LINE in after
+    assert "$\\\\rightarrow$" not in after
+    # The only difference is the one upstream actually made.
+    assert after == before.replace('--project "$KEY"',
+                                   '--project "$KEY" --type Task')
+    assert MATH_LINE in (repo / ".cedit" / "base" / DOC).read_text(encoding="utf-8")
+
+    # And the overlay still sees exactly the one local edit, so the math line
+    # did not quietly become an adaptation of a base that was never written.
+    assert cli.main(["status", DOC]) == 0
+    assert "1 local edit(s)" in capsys.readouterr().out
+
+
+def test_resolve_take_upstream_writes_the_math_it_recorded(repo, capsys):
+    """The fourth write path, and the one that goes through a splice.
+
+    It also pins the boundary: what the manifest records, and what `resolve
+    --show` prints back, is the math as the author wrote it — the sentinel
+    lives in the token stream and nowhere a user or a state file can see it.
+    """
+    upstream_file = os.path.join("upstream", DOC)
+    assert cli.main(["snapshot", DOC, "--from", upstream_file]) == 0
+    doc = repo / DOC
+    doc.write_text(read_doc(repo).replace("Prose about the setup step.",
+                                          "Prose about the setup step (ours)."),
+                   encoding="utf-8")
+
+    write_upstream(repo, UPSTREAM_V1.replace(
+        "Prose about the setup step.",
+        "Prose about the setup step, now $\\rightarrow$ annotated."))
+    assert cli.main(["sync", "--from", "upstream"]) == 1
+    (key,) = manifest(repo)["docs"][DOC]["conflicts"]
+    recorded = manifest(repo)["docs"][DOC]["conflicts"][key]
+    assert recorded["upstream_text"] == \
+        "Prose about the setup step, now $\\rightarrow$ annotated."
+
+    capsys.readouterr()
+    assert cli.main(["resolve", DOC, key, "--take", "upstream"]) == 0
+    assert capsys.readouterr().err == ""
+    assert "now $\\rightarrow$ annotated." in read_doc(repo)
+    assert "$\\\\rightarrow$" not in read_doc(repo)
 
 
 def test_a_document_without_math_warns_about_nothing(repo, capsys):
