@@ -1742,6 +1742,57 @@ Re-baseline that document — the recipe is *Re-baselining a document* in
 adaptations live in the working copy, so none of them are lost. Documents with
 no such math are unaffected: their hashes and canonical bytes do not move.
 
+**Link reference definitions are inlined when used, and unused ones are dropped.**
+Markdown allows link references to be defined separately from their use:
+
+```markdown
+[ref]: https://example.com
+
+Link to [ref].
+```
+
+The pinned parser (mdformat) inlines these definitions on render, converting them
+to direct links. Used references are preserved:
+
+```console
+$ cedit md canonicalize
+[ref]: https://example.com
+
+Link to [ref].
+Link to [ref](https://example.com).
+```
+
+However, **unused definitions are silently dropped** — content loss with no
+warning. cedit detects this and warns you:
+
+```console
+$ cedit md canonicalize docs/LINKS.md
+docs/LINKS.md: warning: 1 link reference definition(s) would be lost during canonicalisation
+    line 1: [unused]: https://example.com/never-used
+    Link reference definitions (e.g., '[label]: https://...') are inlined when used,
+    but unused definitions are silently dropped. Either use the reference or convert it
+    to a direct link. See USERGUIDE.md for details.
+```
+
+The warning is stderr-only and does not affect the exit code. To make CI fail on
+it, use `cedit md canonicalize --check <file>`, which exits 1 for any file whose
+canonical form differs — including one with unused link references.
+
+To fix it, either use the reference somewhere in your document or convert it to
+a direct link:
+
+```markdown
+# Instead of an unused definition:
+[unused]: https://example.com
+
+# Write this:
+[text](https://example.com)
+```
+
+The warning appears on every `cedit md canonicalize` and on `sync`/`resolve`/`snapshot`
+— anywhere the canonical form is computed. A document with no unused references
+says nothing.
+
 **Upstream is not fetched.** `--from` takes a directory or a file that already
 exists on disk. Submodules, subtrees, `curl`, a sync script — your transport.
 
