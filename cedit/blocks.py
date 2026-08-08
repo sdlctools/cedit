@@ -20,6 +20,13 @@ splice replaces only the token's `content` (plus `info` for fences — that is
 where ```` ```bash ```` → ```` ```zsh ```` lives).
 Every render re-parses its own output and refuses to pass if the block
 structure moved (`StructureMismatch`).
+
+Fragile `$...$` math is carried through all of this as a sentinel
+(`mathguard`): the token stream holds the sentinel, so mdformat never sees
+the backslash it would escape, and every text that leaves this module —
+`ParsedDoc.canonical`, `Block.text`, the render — is restored first. A
+`ParsedDoc` therefore owns the sentinel map for its own tree, and a splice
+registers the math in the text it splices in.
 """
 
 from __future__ import annotations
@@ -29,6 +36,7 @@ from dataclasses import dataclass, field
 
 from markdown_it.tree import SyntaxTreeNode
 
+from .mathguard import protect, restore
 from .mdcore import tree_diff
 from .mdcore.utils import ast_to_markdown, markdown_to_ast, parse_inline
 
@@ -81,12 +89,19 @@ class Block:
 @dataclass
 class ParsedDoc:
     """One canonicalised document: the token stream (mutable, renderable),
-    its tree, and the flat block sequence."""
+    its tree, and the flat block sequence.
+
+    `canonical` and every `Block.text` read as the document does. `tokens`
+    and the hashes taken over them read with the math replaced by sentinels
+    — that is what keeps the render from escaping it — and `math` is the
+    map back, consulted by `render_verified` and extended by `splice_block`.
+    """
 
     canonical: str
     tokens: list
     root: SyntaxTreeNode
     blocks: list[Block]
+    math: dict[str, str] = field(default_factory=dict, repr=False)
 
     @property
     def doc_hash(self) -> str:
@@ -94,12 +109,25 @@ class ParsedDoc:
 
 
 def canonicalise(md: str) -> str:
-    """The mdformat round-trip every hash in `.cedit/` state is taken over."""
-    return ast_to_markdown(markdown_to_ast(md))
+    """The mdformat round-trip every hash in `.cedit/` state is taken over.
+
+    Fragile math goes through it untouched: the round-trip runs over the
+    sentinels, and the original bytes go back into the result (`mathguard`).
+    """
+    guarded = protect(md)
+    return restore(ast_to_markdown(markdown_to_ast(guarded.text)), guarded.spans)
 
 
 def parse_doc(md: str, *, canonical: bool = False) -> ParsedDoc:
-    text = md if canonical else canonicalise(md)
+    # `canonical=True` says the caller already holds canonical bytes (a base
+    # snapshot), so only the protection pass runs. Either way the tree is
+    # built over the *protected* text, and `protect` is its own inverse over
+    # `restore`, so both routes reach the same sentinels — and therefore the
+    # same hashes — for the same document.
+    guarded = protect(md)
+    text = guarded.text if canonical else \
+        ast_to_markdown(markdown_to_ast(guarded.text))
+    math = dict(guarded.spans)
     tokens = markdown_to_ast(text)
     root = SyntaxTreeNode(tokens)
     tree_diff.hash_tree(root)
@@ -109,14 +137,16 @@ def parse_doc(md: str, *, canonical: bool = False) -> ParsedDoc:
     def walk(node: SyntaxTreeNode) -> None:
         if tree_diff.is_unit(node):
             blocks.append(Block(UNIT, node.type, node.h, 0,
-                                tree_diff._unit_source(node), "",
-                                tree_diff._heading_trail(node), node))
+                                restore(tree_diff._unit_source(node), math), "",
+                                restore(tree_diff._heading_trail(node), math),
+                                node))
             return
         if node.type in tree_diff.OPAQUE:
             blocks.append(Block(OPAQUE, node.type, node.h, 0,
                                 tree_diff.own_text(node),
                                 tree_diff.attr(node, "info"),
-                                tree_diff._heading_trail(node), node))
+                                restore(tree_diff._heading_trail(node), math),
+                                node))
             return
         for child in node.children:
             walk(child)
@@ -129,7 +159,7 @@ def parse_doc(md: str, *, canonical: bool = False) -> ParsedDoc:
         block.occurrence = seen.get(block.hash, 0)
         seen[block.hash] = block.occurrence + 1
 
-    return ParsedDoc(text, tokens, root, blocks)
+    return ParsedDoc(restore(text, math), tokens, root, blocks, math)
 
 
 # --------------------------------------------------------------------------
@@ -174,8 +204,14 @@ def _first_difference(a: tuple, b: tuple, path: str = "") -> str:
 # --------------------------------------------------------------------------
 
 
-def splice_block(block: Block, text: str, info: str = "") -> bool:
-    """Replace `block`'s editable content in its tree, in place.
+def splice_block(doc: ParsedDoc, block: Block, text: str, info: str = "") -> bool:
+    """Replace `block`'s editable content in `doc`'s tree, in place.
+
+    `text` reads as the document does — it came from a `Block.text` or a
+    conflict record — so any fragile math in it is protected on the way in
+    and registered with `doc`, which is what lets the render put it back.
+    An opaque block needs none of that: mdformat writes a fence, an HTML
+    block or front matter out verbatim, backslashes included.
 
     Returns False when there is nothing to splice into (a unit with no
     `inline` child — an empty table cell); the caller decides what that
@@ -192,6 +228,11 @@ def splice_block(block: Block, text: str, info: str = "") -> bool:
     inline = next((c for c in node.children if c.type == "inline"), None)
     if inline is None:
         return False
+    # Against the whole document, not the fragment: a sentinel chosen here has
+    # to avoid text `doc` already contains and sentinels it already uses.
+    guarded = protect(text, context=doc.canonical, taken=doc.math)
+    doc.math.update(guarded.spans)
+    text = guarded.text
     if node.type in SINGLE_LINE_TYPES:
         text = _WS.sub(" ", text).strip()
     children = parse_inline(text)
@@ -208,7 +249,7 @@ def render_verified(doc: ParsedDoc, *, label: str = "<doc>") -> str:
     matches what the tree had before rendering. Raises StructureMismatch —
     and the caller must not write the file — otherwise returns the Markdown.
     """
-    rendered = ast_to_markdown(doc.tokens)
+    rendered = restore(ast_to_markdown(doc.tokens), doc.math)
     want = block_signature(doc.canonical)
     got = block_signature(rendered)
     if want != got:

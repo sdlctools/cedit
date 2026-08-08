@@ -80,7 +80,7 @@ before touching either.
 | `cedit/merge3.py` | the merge matrix executed: REAPPLY / UPDATE / CONFLICT / ORPHAN per base block |
 | `cedit/align.py` | flat block-sequence alignment: LCS over Merkle hashes, similarity pairing, move and fuzzy passes |
 | `cedit/blocks.py` | block extraction (inline units + opaque blocks), splicing, render-and-verify |
-| `cedit/mathguard.py` | the `$...$` math guard — detects spans canonicalisation would rewrite and warns on **stderr only**, never touching the exit code |
+| `cedit/mathguard.py` | the `$...$` math guard — protects spans canonicalisation would rewrite behind a sentinel and restores them afterwards, so they survive byte-exact; warns on **stderr only** about the few it cannot locate, never touching the exit code |
 | `cedit/state.py` | `.cedit/` — base snapshots, manifest (+ conflicts), derived overlay |
 | `cedit/store.py` | atomic writes: temp file in the target dir + `rename(2)` |
 | `cedit/mdcore/` | **frozen**: `utils` (the pinned parser), `tree_diff` (hashing, segmentation, similarity) — every recorded hash is a function of these |

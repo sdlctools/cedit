@@ -73,6 +73,36 @@ A change is **hash-moving** if it alters any of:
 | a docstring or comment | inert — it cannot reach `make_parser` |
 | deleting an uncalled symbol | inert, and provable in one run of the drift check |
 | any pin bump | assume hash-moving until the drift check says otherwise |
+| `mathguard`'s detection (`find_fragile_math` and the scanners under it) or its sentinel (`_PREFIX`, `_DIGEST`, `_sentinel`) | hash-moving — **for documents containing `$…$` math, and only those**. See below |
+
+### The one hash-moving surface outside `mdcore/`
+
+`cedit/mathguard.py` is not frozen, but since CED-27 it sits on the hashing
+path: `blocks.canonicalise` and `blocks.parse_doc` swap every fragile `$…$`
+span for a sentinel *before* the parser sees the document, and put the
+original bytes back afterwards. So the tree — and every hash taken over it —
+is a function of what `find_fragile_math` detects and of how `_sentinel`
+spells its replacement, as well as of `mdcore/`.
+
+Two things make this a narrower surface than a parser change, and it is worth
+keeping them straight:
+
+- **The move is scoped to documents that contain fragile math.** Protection is
+  a no-op everywhere else, byte for byte. A change here is measured by running
+  the new canonicalisation over a corpus and showing which files move — CED-27
+  measured 10 tracked `.md` in this repo (0 moved) and 60 in
+  demo-jst-customization (1 moved, the one holding `$\rightarrow$`).
+- **Detection and sentinel move different things.** Changing *detection* moves
+  the canonical bytes, which is the damaging class for consumers
+  (`.cedit/base/` goes stale). Changing only the *sentinel* leaves the
+  canonical bytes identical — `restore` puts the same math back — and moves
+  only the hash values, which is the recoverable class. Say which in the notes.
+
+The drift check cannot see either unless the fixture contains fragile math,
+and it deliberately does not: adding math to `tests/fixtures/kitchen-sink.md`
+would re-key the baseline (invariant 4). `tests/test_mathguard.py` is the
+instrument for this surface instead, and it re-measures its whole corpus
+through `canonicalise` and `render_verified` on every run.
 
 `cedit/mdcore/utils.py` carries three worked examples of narrow-blast-radius
 changes with the argument written out inline:
