@@ -22,6 +22,7 @@ the same thing you did.
 | [AGENTS.md](https://github.com/sdlctools/cedit/blob/main/AGENTS.md) | **Changing cedit itself** — build and test commands, the architecture in one table, and the five invariants a change must not violate. `CLAUDE.md` exists only to pull this in, so every AI assistant reads the same file |
 | [ARCHITECTURE.md](https://github.com/sdlctools/cedit/blob/main/ARCHITECTURE.md) | **The code, and how to change it** — every function, dataclass field and constant, the end-to-end call graph from `cli.main` down to the splice, where each invariant is actually enforced, and a *Changing cedit* section: which changes move consumers' stored hashes, and what to touch to add a subcommand, a block kind or a state field |
 | [.claude/rules/release-pipeline.md](https://github.com/sdlctools/cedit/blob/main/.claude/rules/release-pipeline.md) | **How this repo ships** — the two tag shapes, the dev-build / cut / release flow end to end, who owns the version at each step, the five workflow invariants, and a failure-mode table |
+| [cedit-canonicalization-reference.md](https://github.com/sdlctools/cedit/blob/main/cedit-canonicalization-reference.md) | **Canonicalization reference** — every Markdown element and how `cedit md canonicalize` transforms it, known caveats, and quick test commands |
 
 Using cedit? You want USERGUIDE.md. The last three are for working *on* it.
 
@@ -138,15 +139,9 @@ resolve` speak.
   rewrites, table-cell tweaks, front-matter edits.
 - Fetching upstream. `--from` takes a directory (mirroring your doc
   paths) or a file; git submodules, subtrees or curl are your transport.
-- **Parse** `$...$` / `$$...$$` **LaTeX math**. The parser does not know
-  that syntax — but cedit no longer rewrites it either: every such span is
-  preserved byte for byte on every path that writes, so
-  `$\rightarrow$` stays `$\rightarrow$`. The one exception is a span in a
-  table cell that also holds `\|`, which cedit **warns about on stderr**
-  and leaves the exit code alone; gate on `cedit md canonicalize --check`
-  if you want CI to fail. See
-  [USERGUIDE.md §13](https://github.com/sdlctools/cedit/blob/main/USERGUIDE.md#13-limits-stated-plainly),
-  which also covers re-baselining a document tracked before 0.4.0.
+- **Link reference definitions are inlined when used, and unused ones are
+  dropped with a warning on stderr.** See
+  [USERGUIDE.md §13](https://github.com/sdlctools/cedit/blob/main/USERGUIDE.md#13-limits-stated-plainly).
 
 ## Layout
 

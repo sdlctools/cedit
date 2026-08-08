@@ -2113,3 +2113,4 @@ so diffs stay local and reviewable.
 | [SPEC.md](SPEC.md) | the normative design — merge matrix, sync algorithm, state format, reuse rules, phases |
 | [AGENTS.md](AGENTS.md) | working on cedit itself: orientation, invariants, repo workflow |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | the implementation module by module, and the recipes for extending it |
+| [cedit-canonicalization-reference.md](cedit-canonicalization-reference.md) | every Markdown element and how `cedit md canonicalize` transforms it, known caveats, and quick test commands |
