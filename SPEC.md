@@ -322,3 +322,14 @@ decides it, and what consumers do when hashes moved. The invariants:
   `\|` — are **warned about on stderr**, exit code untouched, which is the
   same gate philosophy as everywhere else here: surface it, never silently
   decide.
+- **Making a table row mean more than the parser reads.** A GFM header row
+  fixes the column count, and anything a body row carries past it — an
+  annotation after the closing pipe, an extra cell — is discarded before
+  cedit's tree exists. Teaching the parser otherwise is the same
+  parser-identity change as the math case, and GitHub truncates those rows
+  too. Again, not reading it is not a licence to lose it: cedit lifts the
+  text out of the source before the parse and appends it back onto its own
+  row after the render (`cedit/rowguard.py`; USERGUIDE.md §13), so the bytes
+  survive even though nothing keys on them. It is carried, not understood —
+  and because it belongs to no block, it is not merged either: the merged
+  document keeps the row upstream sent.

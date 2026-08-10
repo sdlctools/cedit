@@ -40,12 +40,16 @@ cli.cmd_sync
 ├── entry["conflicts"] guard                refuse to sync a doc with open conflicts
 ├── state.read_base(doc)                    B — the canonical base snapshot
 ├── blocks.canonicalise(upstream file)      U — mdformat round-trip, then compared to B
+│   ├── rowguard.protect / restore           a body row's over-the-header text lifted out and back
 │   └── mathguard.protect / restore          `$…$` math swapped for a sentinel and back
 ├── mathguard.warn_fragile_math(U src, L)   stderr only, and only for spans `protect`
 │                                           could not locate — silent on every document
 │                                           measured
+├── rowguard.warn_row_overflow(U src, L)    the same, for rows `protect` could not lift
 └── merge3.merge(B, L, U)
-    ├── blocks.parse_doc  ×3                → ParsedDoc(canonical, tokens, root, blocks, math)
+    ├── blocks.parse_doc  ×3                → ParsedDoc(canonical, tokens, root, blocks, math, rows)
+    │   ├── rowguard.protect                 runs first: it shortens row lines, and
+    │   │                                    mathguard's offsets are over what it is handed
     │   ├── mathguard.protect                the tree is built over the *protected* text
     │   ├── mdcore.utils.markdown_to_ast     the one pinned parser
     │   └── mdcore.tree_diff.hash_tree       Merkle hash per node → Block.hash
@@ -244,7 +248,7 @@ on it, and per
 
 | Verb | Emits |
 | --- | --- |
-| `canonicalize [file\|-]` | the mdformat round-trip — the exact bytes `.cedit/base/<doc>` would hold, `$…$` math included and unmoved. `-i` rewrites via `store.atomic_write_text`; `--check` writes nothing and exits 1 when the input is not already canonical (mutually exclusive with `-i`). All three modes call `mathguard.warn_fragile_math` on the input first — stderr only, so stdout stays the data channel, and silent unless a span could not be protected |
+| `canonicalize [file\|-]` | the mdformat round-trip — the exact bytes `.cedit/base/<doc>` would hold, `$…$` math and a table row's over-the-header text included and unmoved. `-i` rewrites via `store.atomic_write_text`; `--check` writes nothing and exits 1 when the input is not already canonical (mutually exclusive with `-i`). All three modes call `mathguard.warn_fragile_math` and `rowguard.warn_row_overflow` on the input first — stderr only, so stdout stays the data channel, and silent unless a span or a row could not be protected |
 | `ast [file\|-]` | indented tree dump; each line is `type [tag] [info=] [[kind]] [#hash] ["preview"]`. `--hashes` adds the Merkle hash, `--raw` skips canonicalisation |
 | `json [file\|-]` | `--tokens` (default) the flat `Token.as_dict()` stream; `--tree` a nested dict carrying `hash` and `kind` |
 | `from-json [file\|-]` | Markdown rendered from a `--tokens` stream |
@@ -472,21 +476,28 @@ command from the first — a distinction translation never needed.
 
 `canonical: str`, `tokens: list` (mutable and renderable — what the splice
 edits and `render_verified` renders), `root: SyntaxTreeNode`,
-`blocks: list[Block]`, `math: dict[str, str]`. `doc_hash` (property) is
+`blocks: list[Block]`, `math: dict[str, str]`,
+`rows: tuple[rowguard.RowOverflow, ...]`. `doc_hash` (property) is
 `root.h`, the Merkle root recorded as `base_doc_hash` in the manifest.
 
-`math` is the document's sentinel map (`mathguard`). The split it encodes is
-the thing to hold on to: **`tokens` and every hash are over the protected
-text; `canonical` and every `Block.text` are restored.** Sentinels therefore
-never reach an overlay entry, a conflict record or `cedit md blocks`, and the
-renderer never sees a backslash it would escape.
+`math` is the document's sentinel map (`mathguard`) and `rows` its lifted
+table-row surplus (`rowguard`). The split they encode is the thing to hold on
+to: **`tokens` and every hash are over the protected text; `canonical` and
+every `Block.text` are restored.** Sentinels therefore never reach an overlay
+entry, a conflict record or `cedit md blocks`, and the renderer never sees a
+backslash it would escape. `rows` is the asymmetric one: a splice extends
+`math` (text arriving that way can hold math) but never `rows`, because no
+block holds a row's surplus — it is not in any cell.
 
 ### `canonicalise` and `parse_doc`
 
 `canonicalise(md)` (`blocks.py:96`) is the mdformat round-trip **every hash in
-`.cedit/` is taken over**, wrapped in `mathguard.protect` / `restore`: the
-round-trip runs over sentinels and the original `$…$` bytes go back into the
-result, so fragile math is byte-exact through it (CED-27).
+`.cedit/` is taken over**, wrapped in `rowguard.protect` / `restore` and then
+`mathguard.protect` / `restore`: the round-trip runs over sentinels and over
+rows the parser would truncate, and the original `$…$` bytes and row surplus
+go back into the result, so both are byte-exact through it (CED-27, CED-30).
+The order is load-bearing — `rowguard` rewrites the source, and `mathguard`'s
+offsets are taken over whatever it is handed.
 
 `parse_doc(md, *, canonical=False)` (`blocks.py:101`) protects, canonicalises
 unless told the input already is (`canonical=True` is used for base snapshots,
@@ -552,8 +563,9 @@ re-parses into different block structure; this is the gate, and it runs on
 **every** render — the merge (`merge3.py:248`) and `resolve --take upstream`
 (`cli.py:304`) alike.
 
-**What it structurally cannot catch**, and why `mathguard` exists: a rewrite
-*inside* one block's inline content. `block_signature` stops at `inline` by
+**What it structurally cannot catch**, and why `mathguard` and `rowguard`
+exist: a rewrite *inside* one block's inline content, and text that never
+reached a block at all. `block_signature` stops at `inline` by
 design, and both signatures are taken over text the round-trip has already
 produced, so an unprotected `$\rightarrow$` → `$\\rightarrow$` would compare
 equal on both sides and pass. That is why the math is kept out of the
@@ -647,6 +659,79 @@ pinned `mdformat==1.0.0` (pip returns `ResolutionImpossible`), and
 plugin beside the pinned `mdformat-frontmatter==2.1.2` — a parser-identity
 change, hence a hash move across *every* document rather than only the ones
 holding math.
+
+## `cedit/rowguard.py` — the table-row guard
+
+The same shape as `mathguard` — a detector, a protector and a reporter, with
+`blocks` as the only importer — answering the same class of defect: content
+the parser discards before cedit's tree exists, which no later stage can see.
+The mechanism differs, and that difference is the design.
+
+**What is lost.** A GFM table's header row fixes the column count for the
+whole table, and markdown-it's body-row loop is `for i in range(columnCount)`
+(`rules_block/table.py`), so cells past that count are never read. The common
+spelling is an annotation after the closing pipe, but an extra cell or an
+*unescaped* `|` inside a code span produces the same truncation — which is
+why detection asks the parser where it truncates instead of scanning for
+pipes. The identical trailing text under a wider header is a legitimate cell
+and must be left to canonicalisation.
+
+**Why a sentinel cannot work here.** A `mathguard` sentinel works because the
+fragile bytes sit somewhere the parser reads: swap them in place and the
+round-trip carries the sentinel through. Here the *position* is what gets
+dropped, so a sentinel written past the last kept cell is discarded exactly
+as the text was. The surplus is therefore **lifted out of the source before
+the parse and appended back onto its own row after the render**, keyed by the
+row's ordinal among the document's body rows. Ordinals are stable because the
+splice never adds, removes or reorders a row, and `render_verified` refuses
+to write if block structure moved at all.
+
+| Symbol | What it does |
+| --- | --- |
+| `RowGuardError` (`rowguard.py:72`) | raised when a lifted surplus has no row to go back onto. `cli.main` maps it to exit 2; losing the bytes here is the one thing this module exists to prevent, so it is never dropped quietly |
+| `RowOverflow` (`rowguard.py:83`) | frozen dataclass: `row` (0-based ordinal among **all** body rows in the document — the key `restore` uses), `line` (1-based, in the source), `text` (the surplus verbatim, trailing whitespace excluded) |
+| `Protected` (`rowguard.py:99`) | frozen dataclass: `text` (the source with each surplus lifted out), `overflows`, `unprotected`. `.restore(text)` appends them back — note it takes the *rendered* text, unlike `mathguard.Protected.restore()` |
+| `_unescaped_pipes(line)` (`rowguard.py:115`) | the offsets `escapedSplit` cuts on. It tracks a one-character `isEscaped` flag, so a pipe is a separator unless the character immediately before it is a backslash — `\\|` counts as escaped there too, and matching that matters more than being right about it |
+| `_body_rows(tokens)` (`rowguard.py:128`) | `(source line, header column count)` per body row, in token order. Header and delimiter rows are excluded because trailing text on either makes the two disagree, the table is not recognised at all, and the line survives as a paragraph |
+| `_cut(line, columns)` (`rowguard.py:155`) | offset of the pipe closing the last kept cell, or `None`. Reproduces markdown-it's enclosing-pipe pops — front first, then back on what is left — and returns `None` when what trails is only whitespace and pipes |
+| `find_row_overflow(md)` (`rowguard.py:175`) | every droppable surplus, over the *source* as written. Short-circuits on `"\|" not in md` — the branch almost every parse takes |
+| `_fingerprint(tokens)` (`rowguard.py:207`) | everything about a token stream a hash or a render can read: type, tag, content, info, markup, nesting, level, block, hidden, map, attrs, children |
+| `protect(md)` (`rowguard.py:218`) | → `Protected`. **Accepts the lift only if the parser cannot tell**: both sides are parsed and fingerprinted, and a mismatch abandons the whole lift rather than trusting it |
+| `restore(text, overflows)` (`rowguard.py:246`) | re-parses `text` to locate its body rows and appends each surplus onto its own |
+| `warn_row_overflow(md, label, *, stream=None)` (`rowguard.py:267`) | reports only `protect(md).unprotected` to stderr and returns it. **Never touches the exit code** |
+
+Design points:
+
+- **It is hash-neutral, by construction and by check.** The parser was already
+  discarding these bytes, so handing it the row without them yields the
+  identical token stream — which `protect` asserts on every document rather
+  than arguing. That is what makes CED-30 shippable as a hotfix: a
+  `.cedit/base/` snapshot written before the guard still hashes to what the
+  manifest recorded, so no consumer sees a false conflict, and the recovered
+  text reappears in the base on the next `sync`. Only the canonical *bytes*
+  move, and only additively.
+- **The lift is all-or-nothing per document**, not per row. A wrong cut is
+  indistinguishable from a right one at the row level; the fingerprint
+  comparison is a whole-document check, so one bad row abandons the lot and
+  reports every overflow. No input is known to reach it — the prefix rule
+  follows blockquotes and list indentation — which is why
+  `tests/test_rowguard.py` forces a bad cut to exercise the branch.
+- **Order matters against `mathguard`.** `rowguard.protect` runs first, on the
+  source as written: it shortens row lines, and `mathguard`'s offsets are
+  taken over whatever it is handed. Restoring runs the other way round.
+- **The surplus belongs to no block.** No cell contains it, so it rides with
+  its row: a splice never sees it, `Block.text` never holds it, and a `sync`
+  keeps whatever the incoming upstream revision's row carries. Preserving the
+  bytes is the fix; making them mergeable is phase 2's problem, not this
+  module's.
+
+Call sites: `blocks.canonicalise`, `blocks.parse_doc` and
+`blocks.render_verified` for the protection — `blocks.splice_block` is the
+one `mathguard` wiring it does **not** share, and deliberately. Its
+`warn_row_overflow` takes the same five wirings as `warn_fragile_math`:
+`cmd_snapshot` on both sources, `cmd_sync` on both sources, `cmd_resolve
+--take upstream` on the working copy, and `mdcli.cmd_md_canonicalize` on its
+input.
 
 ## `cedit/state.py` — the `.cedit/` directory
 
@@ -809,7 +894,7 @@ names are the durable reference.
 | --- | --- |
 | 1 — `mdcore/` frozen | Convention plus one check: the freeze notices at `mdcore/__init__.py`, `mdcore/tree_diff.py:1-17` and `mdcore/utils.py:1-9`, and SPEC.md's *Reuse rules*. Nothing can catch a *refactor* — review has to — but `tests/parser_contract.py` catches any refactor that changed behaviour |
 | 2 — exact pins | `requirements.txt` (the rationale is in the file itself) → `mdcore/utils.make_parser` (`utils.py:16`) → `blocks.canonicalise` (`blocks.py:96`) → every `Block.hash` and `ParsedDoc.doc_hash` |
-| 3 — no silent clobber | `merge3.merge` (`merge3.py:240-241`) records the conflict **and** splices the local text; `Conflict` carries all three versions (`merge3.py:81`) and `state.set_entry` persists them; `cli.cmd_sync` (`cli.py:159-163`) refuses to sync a doc with open conflicts; `cli.cmd_resolve` (`cli.py:257`) is the only path that takes upstream text. The one clobber the merge cannot see — a `$…$` span the round-trip rewrites *inside* a block — is prevented rather than reported: `mathguard.protect`/`restore` in `blocks.canonicalise`, `parse_doc`, `splice_block` and `render_verified`, with `warn_fragile_math` left on the four write paths for the spans protection cannot reach |
+| 3 — no silent clobber | `merge3.merge` (`merge3.py:240-241`) records the conflict **and** splices the local text; `Conflict` carries all three versions (`merge3.py:81`) and `state.set_entry` persists them; `cli.cmd_sync` (`cli.py:159-163`) refuses to sync a doc with open conflicts; `cli.cmd_resolve` (`cli.py:257`) is the only path that takes upstream text. The two clobbers the merge cannot see are prevented rather than reported: a `$…$` span the round-trip rewrites *inside* a block (`mathguard.protect`/`restore` in `blocks.canonicalise`, `parse_doc`, `splice_block` and `render_verified`), and text a table body row carries past the header's last column, which the parser drops before the tree exists (`rowguard.protect`/`restore` in the same places bar `splice_block`). `warn_fragile_math` and `warn_row_overflow` are left on the write paths for the cases protection cannot reach |
 | 4 — exit codes | `cli.main` (`cli.py:377-379`) maps four exception types to 2; `cli.cmd_sync` (`cli.py:214-216`) and `cli.cmd_status` (`cli.py:243`) are the only sources of 1. `mathguard` is the deliberate counter-example: it reports a real defect and still returns nothing. Preserving the math is what makes that comfortable rather than merely contractual — there is now nothing to fail on |
 | 5 — replacements only | `merge3.local_edits` (`merge3.py:184-187`) raises `StructuralDrift` on any local insert/delete/move, reported per block by `_describe_structural` (`merge3.py:155`); the merged document is U's tree rendered by `render_verified(upstream, …)` (`merge3.py:248`), and `blocks.splice_block` is the only mutation. `cli.cmd_resolve` refuses `--take local` on an orphan (`cli.py:268-273`) for the same reason |
 
@@ -861,7 +946,13 @@ collision-checked sentinel
 (`test_the_sentinel_is_inert_and_checked_against_the_document`) and
 idempotence. `test_a_span_that_cannot_be_located_is_reported` and
 `test_an_unlocatable_span_is_left_alone_rather_than_rewritten_wrongly` cover
-the fallback; `tests/test_cli.py` and `tests/test_mdcli.py` pin the three
+the fallback. `tests/test_rowguard.py` is the same instrument for the table-row
+guard, with one column the math guard has no equivalent of:
+`test_lifting_the_surplus_moves_no_hash` and
+`test_a_base_snapshot_written_before_the_guard_still_matches` re-derive the
+hash-neutrality claim on every run, which is what lets CED-30 ship as a hotfix
+without a re-baselining note. `test_trailing_text_that_fits_the_header_is_a_cell_not_a_surplus`
+pins the reason detection consults the parser rather than counting pipes; `tests/test_cli.py` and `tests/test_mdcli.py` pin the three
 write paths end to end, including QA's `sync` reproduction
 (`test_sync_does_not_rewrite_a_math_line_neither_side_touched`).
 
@@ -925,13 +1016,18 @@ same Markdown hashes to, everywhere, retroactively.
 | Change `mathguard`'s **detection** (`find_fragile_math`, `_spans`, `_inline_close`, `_mask_code_spans`) | **yes, for documents holding `$…$` math** | detection decides what gets protected, so widening or narrowing it changes the canonical form of exactly those documents — and nothing else. This is how CED-27 itself moved hashes |
 | Change `mathguard`'s **sentinel** (`_PREFIX`, `_DIGEST`, `_sentinel`) | **yes, for documents holding `$…$` math** | the tree is built over the sentinel, so its spelling is a hash input. The canonical *bytes* do not move — `restore` puts the same math back — which makes this the cheaper half of the damage (see hash-stability.md) |
 | Change `mathguard.warn_fragile_math` or the message text | no | stderr only, and downstream of everything |
+| Change `rowguard`'s **detection** (`find_row_overflow`, `_body_rows`, `_cut`, `_unescaped_pipes`) | **no — but it moves canonical bytes for documents holding an over-the-header table row** | the lifted text is outside every block and is stripped before hashing, so `protect` can and does assert the token stream is unchanged. Widening or narrowing detection therefore changes only what `.cedit/base/` *stores* for those documents, never what anything hashes to. Measure which documents, as CED-30 did |
+| Change `rowguard.restore`'s keying (the row ordinal), or `warn_row_overflow` | no | `restore` is downstream of the render; the warning is stderr only |
 
 The first five rows are all invariant-1/2 territory and four of them are in
 frozen code you should not be editing at all — the row exists to say what
 *would* happen, not to license it. The two `mathguard` rows are the one
 hash-moving surface *outside* `mdcore/`, and they move hashes for a named
 subset of documents rather than for all of them: measure which, as CED-27
-did, instead of stopping at "hash-moving". Where a hash-moving change is
+did, instead of stopping at "hash-moving". The `rowguard` rows are the
+instructive contrast — a guard that sits on the same path and still moves
+no hash, because what it carries was never in the tree. Which class a guard
+falls into is measured, not assumed from where it lives. Where a hash-moving change is
 genuinely required, it goes through
 [.claude/rules/hash-stability.md](.claude/rules/hash-stability.md): classify
 it, re-record the baseline in the same commit, and say so in the release

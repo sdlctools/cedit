@@ -24,10 +24,12 @@ import os
 import sys
 
 from .blocks import StructureMismatch, canonicalise, parse_doc, splice_block, render_verified
+from .linkguard import warn_link_refs
 from .mathguard import warn_fragile_math
 from .mdcli import MarkdownCliError, add_md_group
 from .mdcore import tree_diff
 from .merge3 import ORPHAN, Conflict, StructuralDrift, local_edits, merge
+from .rowguard import RowGuardError, warn_row_overflow
 from .state import State, StateError, norm_doc
 from .store import atomic_write_text, read_text
 
@@ -90,11 +92,15 @@ def cmd_snapshot(args) -> int:
 
     upstream_md = read_text(args.from_)
     warn_fragile_math(upstream_md, args.from_)
+    warn_link_refs(upstream_md, args.from_)
+    warn_row_overflow(upstream_md, args.from_)
     base = parse_doc(upstream_md)
     doc_file = state.doc_path(doc)
     if os.path.exists(doc_file):
         local_md = read_text(doc_file)
         warn_fragile_math(local_md, doc)
+        warn_link_refs(local_md, doc)
+        warn_row_overflow(local_md, doc)
         local = parse_doc(local_md)
         edits = local_edits(base, local, doc_label=doc)
     else:
@@ -193,7 +199,11 @@ def cmd_sync(args) -> int:
         # nothing downstream can see the rewrite (see `mathguard`).
         local_src = read_text(state.doc_path(doc))
         warn_fragile_math(upstream_src, upstream_path)
+        warn_link_refs(upstream_src, upstream_path)
+        warn_row_overflow(upstream_src, upstream_path)
         warn_fragile_math(local_src, doc)
+        warn_link_refs(local_src, doc)
+        warn_row_overflow(local_src, doc)
 
         try:
             result = merge(base_md, local_src, upstream_md, doc_label=doc)
@@ -309,6 +319,8 @@ def cmd_resolve(args) -> int:
 
     local_src = read_text(state.doc_path(doc))
     warn_fragile_math(local_src, doc)
+    warn_link_refs(local_src, doc)
+    warn_row_overflow(local_src, doc)
     local = parse_doc(local_src)
     target = next(
         (b for b in local.blocks
@@ -400,7 +412,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return args.func(args)
     except (StateError, StructuralDrift, StructureMismatch, MarkdownCliError,
-            FileNotFoundError) as exc:
+            RowGuardError, FileNotFoundError) as exc:
         print(exc, file=sys.stderr)
         return 2
 
