@@ -27,6 +27,14 @@ the backslash it would escape, and every text that leaves this module —
 `ParsedDoc.canonical`, `Block.text`, the render — is restored first. A
 `ParsedDoc` therefore owns the sentinel map for its own tree, and a splice
 registers the math in the text it splices in.
+
+Text a table's body row carries past the header's last column is carried
+through the same way, and for the same reason — the parser drops it — but
+lifted out and re-appended by row ordinal rather than swapped for a sentinel
+(`rowguard`). It belongs to no block, so a `ParsedDoc` owns it alongside the
+sentinel map and a splice never sees it. `rowguard.protect` runs **first**,
+on the source as written: it shortens row lines, and `mathguard`'s offsets
+are taken over whatever it is handed.
 """
 
 from __future__ import annotations
@@ -36,6 +44,7 @@ from dataclasses import dataclass, field
 
 from markdown_it.tree import SyntaxTreeNode
 
+from . import rowguard
 from .mathguard import protect, restore
 from .mdcore import tree_diff
 from .mdcore.utils import ast_to_markdown, markdown_to_ast, parse_inline
@@ -93,8 +102,11 @@ class ParsedDoc:
 
     `canonical` and every `Block.text` read as the document does. `tokens`
     and the hashes taken over them read with the math replaced by sentinels
-    — that is what keeps the render from escaping it — and `math` is the
-    map back, consulted by `render_verified` and extended by `splice_block`.
+    — that is what keeps the render from escaping it — and with each body
+    row's over-the-header text lifted out, which is what keeps the parser
+    from discarding it. `math` and `rows` are the two maps back, both
+    consulted by `render_verified`; `math` alone is extended by
+    `splice_block`, since no block holds a row's surplus.
     """
 
     canonical: str
@@ -102,6 +114,7 @@ class ParsedDoc:
     root: SyntaxTreeNode
     blocks: list[Block]
     math: dict[str, str] = field(default_factory=dict, repr=False)
+    rows: tuple[rowguard.RowOverflow, ...] = field(default=(), repr=False)
 
     @property
     def doc_hash(self) -> str:
@@ -113,9 +126,13 @@ def canonicalise(md: str) -> str:
 
     Fragile math goes through it untouched: the round-trip runs over the
     sentinels, and the original bytes go back into the result (`mathguard`).
+    A body row's over-the-header text does too, lifted out before the parse
+    and appended back onto its row after the render (`rowguard`).
     """
-    guarded = protect(md)
-    return restore(ast_to_markdown(markdown_to_ast(guarded.text)), guarded.spans)
+    rows = rowguard.protect(md)
+    guarded = protect(rows.text)
+    rendered = ast_to_markdown(markdown_to_ast(guarded.text))
+    return rows.restore(restore(rendered, guarded.spans))
 
 
 def parse_doc(md: str, *, canonical: bool = False) -> ParsedDoc:
@@ -124,7 +141,8 @@ def parse_doc(md: str, *, canonical: bool = False) -> ParsedDoc:
     # built over the *protected* text, and `protect` is its own inverse over
     # `restore`, so both routes reach the same sentinels — and therefore the
     # same hashes — for the same document.
-    guarded = protect(md)
+    rows = rowguard.protect(md)
+    guarded = protect(rows.text)
     text = guarded.text if canonical else \
         ast_to_markdown(markdown_to_ast(guarded.text))
     math = dict(guarded.spans)
@@ -159,7 +177,8 @@ def parse_doc(md: str, *, canonical: bool = False) -> ParsedDoc:
         block.occurrence = seen.get(block.hash, 0)
         seen[block.hash] = block.occurrence + 1
 
-    return ParsedDoc(restore(text, math), tokens, root, blocks, math)
+    return ParsedDoc(rows.restore(restore(text, math)), tokens, root, blocks,
+                     math, rows.overflows)
 
 
 # --------------------------------------------------------------------------
@@ -249,7 +268,8 @@ def render_verified(doc: ParsedDoc, *, label: str = "<doc>") -> str:
     matches what the tree had before rendering. Raises StructureMismatch —
     and the caller must not write the file — otherwise returns the Markdown.
     """
-    rendered = restore(ast_to_markdown(doc.tokens), doc.math)
+    rendered = rowguard.restore(restore(ast_to_markdown(doc.tokens), doc.math),
+                                doc.rows)
     want = block_signature(doc.canonical)
     got = block_signature(rendered)
     if want != got:
