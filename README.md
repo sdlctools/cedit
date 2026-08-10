@@ -154,6 +154,7 @@ resolve` speak.
 | `cedit/align.py` | block-sequence alignment (LCS over Merkle hashes, moves, fuzzy) |
 | `cedit/blocks.py` | block extraction, splicing, render-and-verify |
 | `cedit/mathguard.py` | the `$...$` math guard: carry the math through canonicalisation byte-exact, warn on stderr about what it cannot |
+| `cedit/rowguard.py` | the table-row guard: carry what a body row holds past the header's last column through canonicalisation byte-exact, warn on stderr about what it cannot |
 | `cedit/state.py` | `.cedit/` — base snapshots, manifest (+ conflicts), overlay |
 | `cedit/store.py` | atomic writes: temp file + `rename(2)`, so a crash never leaves half-written state |
 | `cedit/mdcore/` | **frozen**: the pinned parser + tree_diff — every recorded hash is a function of these |

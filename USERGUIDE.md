@@ -1793,6 +1793,75 @@ The warning appears on every `cedit md canonicalize` and on `sync`/`resolve`/`sn
 — anywhere the canonical form is computed. A document with no unused references
 says nothing.
 
+**A table row can carry more than its header declares — and that text is kept.**
+A GFM table's header row fixes the column count for the whole table, and the
+parser truncates every body row to it. Anything past the last kept cell is
+discarded before cedit's tree exists — an annotation parked after the closing
+pipe, an extra cell, or the tail of a row that an *unescaped* `|` inside a code
+span split further than you meant it to:
+
+```markdown
+| Jira type | API value |
+| --- | --- |
+| Sub-task | `Subtask` |   <- no hyphen for this project (see §11)
+```
+
+Left alone, that row canonicalises to `| Sub-task | \`Subtask\` |` and the
+pointer is gone — with no warning and exit 0, because the block structure is
+unchanged and every hash is taken over a tree the text never reached.
+
+cedit does not leave it alone. Before a document is parsed, each row's surplus
+is lifted out; after the render it is appended back onto the same row, byte for
+byte. That holds on every path that writes: `snapshot`, `sync`,
+`resolve --take upstream` and `md canonicalize` (including `-i`).
+
+```console
+$ cedit md canonicalize -i docs/JIRA-REST.md; echo "rc=$?"
+docs/JIRA-REST.md: already canonical
+rc=0
+```
+
+Nothing is said about it, because there is nothing to say. Detection asks the
+parser where it truncates rather than scanning for pipes, so the *same* line
+under a three-column header is a genuine third cell and is canonicalised
+normally — and a row whose surplus is only whitespace and stray `|` is still
+normalised away, because that is punctuation, not content.
+
+Two consequences worth knowing:
+
+- **Your hashes do not move.** The parser was already discarding these bytes, so
+  handing it the row without them produces the identical tree — cedit checks
+  that on every document rather than assuming it. A `.cedit/base/` snapshot
+  written before this release still matches block for block; the recovered text
+  reappears in the base on the next `sync`. This is not the re-baselining case
+  described in [.claude/rules/hash-stability.md](.claude/rules/hash-stability.md).
+- **The recovered text is not part of any block**, because no cell contains it.
+  It rides with its row, so a `sync` keeps whatever the incoming upstream
+  revision's row carries, and an edit you make to that text alone is not merged.
+  Preserving the bytes is what this guard is for; making them mergeable is not
+  something phase 1 can offer ([SPEC.md](SPEC.md)).
+
+If the text matters enough to merge, give the table another column and put it in
+a cell, or escape the `|` that split the row (`\|`) so the cells you meant are
+the cells the parser sees.
+
+In the rare case cedit cannot lift a row's surplus cleanly, it says so and
+leaves the row alone rather than rewriting it into bytes nobody wrote — stderr
+only, and **the exit code does not move** ([§16](#exit-codes)):
+
+```console
+$ cedit sync --from vendor; echo "rc=$?"
+docs/TABLES.md: warning: 1 table row(s) carry text past the header's last column that could not be preserved
+    line 12: | a | b | note
+    A GFM table's header row fixes the column count, and cedit's parser discards
+    whatever a body row carries past it — an annotation after the closing pipe, or an
+    extra cell. cedit normally lifts that text out and puts it back verbatim, and
+    cannot for these. Give the table another column, or move the note into a cell
+    (USERGUIDE.md §13).
+docs/TABLES.md: 1 edit(s) reapplied, 2 block(s) updated from upstream
+rc=0
+```
+
 **Upstream is not fetched.** `--from` takes a directory or a file that already
 exists on disk. Submodules, subtrees, `curl`, a sync script — your transport.
 

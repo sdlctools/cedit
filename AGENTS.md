@@ -81,11 +81,12 @@ before touching either.
 | `cedit/align.py` | flat block-sequence alignment: LCS over Merkle hashes, similarity pairing, move and fuzzy passes |
 | `cedit/blocks.py` | block extraction (inline units + opaque blocks), splicing, render-and-verify |
 | `cedit/mathguard.py` | the `$...$` math guard — protects spans canonicalisation would rewrite behind a sentinel and restores them afterwards, so they survive byte-exact; warns on **stderr only** about the few it cannot locate, never touching the exit code |
+| `cedit/rowguard.py` | the table-row guard — lifts what a body row carries past the header's last column out of the source before the parse (which would discard it) and appends it back onto its row after the render, byte-exact; **hash-neutral by construction and by check**, and warns on stderr like `mathguard` about the rows it cannot lift |
 | `cedit/state.py` | `.cedit/` — base snapshots, manifest (+ conflicts), derived overlay |
 | `cedit/store.py` | atomic writes: temp file in the target dir + `rename(2)` |
 | `cedit/mdcore/` | **frozen**: `utils` (the pinned parser), `tree_diff` (hashing, segmentation, similarity) — every recorded hash is a function of these |
 | `cedit/__main__.py` | `python3 -m cedit` entry — delegates to `cli.main` |
-| `tests/` | `test_merge3.py` (the merge matrix), `test_cli.py` (end-to-end lifecycle), `test_mdcli.py` (the `md` group), `test_mathguard.py` (math-guard precision, both columns re-measured each run), `test_packaging.py` (version resolution, pin drift, README link absoluteness), `test_parser_contract.py` (the drift check — invariant 2, enforced) |
+| `tests/` | `test_merge3.py` (the merge matrix), `test_cli.py` (end-to-end lifecycle), `test_mdcli.py` (the `md` group), `test_mathguard.py` (math-guard precision, both columns re-measured each run), `test_rowguard.py` (table-row preservation, detection precision, and the hash-neutrality claim), `test_packaging.py` (version resolution, pin drift, README link absoluteness), `test_parser_contract.py` (the drift check — invariant 2, enforced) |
 
 A `sync` flows in one direction: **parse** B (base), L (local working copy)
 and U (incoming upstream) into block sequences → **align** L against B (the

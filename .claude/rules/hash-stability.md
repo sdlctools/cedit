@@ -74,8 +74,9 @@ A change is **hash-moving** if it alters any of:
 | deleting an uncalled symbol | inert, and provable in one run of the drift check |
 | any pin bump | assume hash-moving until the drift check says otherwise |
 | `mathguard`'s detection (`find_fragile_math` and the scanners under it) or its sentinel (`_PREFIX`, `_DIGEST`, `_sentinel`) | hash-moving — **for documents containing `$…$` math, and only those**. See below |
+| `rowguard`'s detection (`find_row_overflow`, `_body_rows`, `_cut`) | **not** hash-moving — canonical-form-moving only, for documents holding an over-the-header table row. The counter-example worth reading before assuming otherwise. See below |
 
-### The one hash-moving surface outside `mdcore/`
+### The two guards outside `mdcore/`, and why only one moves hashes
 
 `cedit/mathguard.py` is not frozen, but since CED-27 it sits on the hashing
 path: `blocks.canonicalise` and `blocks.parse_doc` swap every fragile `$…$`
@@ -103,6 +104,34 @@ and it deliberately does not: adding math to `tests/fixtures/kitchen-sink.md`
 would re-key the baseline (invariant 4). `tests/test_mathguard.py` is the
 instrument for this surface instead, and it re-measures its whole corpus
 through `canonicalise` and `render_verified` on every run.
+
+`cedit/rowguard.py` (CED-30) sits on the same path and is the instructive
+counter-example: it moves **no** hash, and the difference is worth
+internalising before assuming any guard is hash-moving because of where it
+sits. It lifts what a table body row carries past the header's last column
+out of the source before the parse — text markdown-it was discarding anyway,
+because its body-row loop is `for i in range(columnCount)`. Handing the
+parser the row without those bytes therefore yields the *identical* token
+stream, which `rowguard.protect` asserts on every document by parsing both
+sides and comparing full token fingerprints, abandoning the lift if they
+differ. Widening or narrowing its detection changes what `.cedit/base/`
+stores for the affected documents and nothing else; no `base_doc_hash`, no
+overlay key and no conflict key moves. CED-30 measured that across 131
+tracked `.md` in three repositories — 3 files' canonical bytes moved (2 in
+this repo, 1 in demo-jst-customization), 0 hashes — and
+`tests/parser-baseline.json` was unchanged by `--update`.
+
+Note also which damage class that canonical-form move *is not*: the recovered
+bytes sit outside every block and are stripped again before hashing, so a
+base snapshot written before the guard still aligns block for block against a
+working copy that has them. It is the only canonical-form move on record here
+that does not call for re-baselining.
+
+`tests/test_rowguard.py` is that guard's instrument, and it carries a column
+`test_mathguard.py` has no equivalent of: `test_lifting_the_surplus_moves_no_hash`
+and `test_a_base_snapshot_written_before_the_guard_still_matches` re-derive
+the neutrality claim on every run, so a later change that quietly turns it
+into a hash move fails there rather than in a consumer's next `sync`.
 
 `cedit/mdcore/utils.py` carries three worked examples of narrow-blast-radius
 changes with the argument written out inline:
