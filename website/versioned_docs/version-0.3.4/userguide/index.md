@@ -15,7 +15,7 @@ overview, [README.md](https://github.com/sdlctools/cedit/blob/main/README.md).
 Every command and every block of output below was run for real — against this
 repository or a throwaway directory — and pasted unedited.
 
-![cedit compares document ASTs and tracks the changes between them](../../assets/ast-trees-comparison-and-changes-tracking.png)
+![cedit compares document ASTs and tracks the changes between them](../assets/ast-trees-comparison-and-changes-tracking.png)
 
 ## Contents
 

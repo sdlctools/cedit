@@ -149,6 +149,15 @@ one is ignored:
 **Do not cite a doc by line number.** ARCHITECTURE.md used to, and every one
 of those citations broke the moment the guide moved. Name the page.
 
+**An image a doc references lives under `docs/`.** `docusaurus docs:version`
+snapshots that directory and nothing else, so an image outside it resolves in
+the working tree and *not* in the snapshot — a hard build failure that first
+appears in the release run, once the broken snapshot is already committed and
+a cut version cannot be re-cut. v0.3.4 shipped that way, with the guide's
+diagram at the repository root reached as `../../assets/`.
+`tests/test_packaging.py::test_docs_images_resolve_from_inside_docs` scans
+`docs/` and every cut version for it now.
+
 Same rule for the paths cedit *prints*. A docstring or comment naming a
 document uses the repo-relative path (`docs/SPEC.md`); anything that reaches
 a user's terminal — the guards' stderr warnings, `cedit --help` — uses the
