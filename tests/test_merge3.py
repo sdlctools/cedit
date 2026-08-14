@@ -1,4 +1,4 @@
-"""The merge matrix, exercised edit by edit — SPEC.md's phase-1 acceptance.
+"""The merge matrix, exercised edit by edit — docs/SPEC.md's phase-1 acceptance.
 
 Every test builds three revisions of a small but realistic skill document
 (front matter, headings, prose, fences, a list, a table) and checks both the

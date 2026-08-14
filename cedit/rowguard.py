@@ -50,7 +50,8 @@ The surplus rides with its row rather than joining a block, because it is not
 in one — no cell contains it. Editing it is therefore invisible to the merge:
 a `sync` keeps the row annotation the incoming upstream revision carries.
 Preserving the bytes is the fix; making them mergeable is not phase 1's to
-give. USERGUIDE.md §13 is the user-facing version of this paragraph.
+give. docs/userguide/help/limits.md is the user-facing version of this
+paragraph.
 """
 
 from __future__ import annotations
@@ -289,5 +290,7 @@ def warn_row_overflow(md: str, label: str, *, stream=None) -> list[RowOverflow]:
           "back verbatim, and\n"
           "    cannot for these. Give the table another column, or move the "
           "note into a cell\n"
-          "    (USERGUIDE.md §13).", file=out)
+          "    — the user guide, *Limits, stated plainly*:\n"
+          "    https://sdlctools.github.io/cedit/docs/userguide/limits",
+          file=out)
     return overflows

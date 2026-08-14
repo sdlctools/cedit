@@ -274,7 +274,10 @@ def test_an_unliftable_row_is_reported(capsys, bad_cut):
     assert captured.out == ""                      # stderr only, never stdout
     assert "skills/demo/SKILL.md: warning:" in captured.err
     assert "past the header's last column" in captured.err
-    assert "USERGUIDE.md §13" in captured.err
+    # The pointer a real user follows out of this warning. It is a published
+    # URL rather than a repo path because the reader is running an installed
+    # cedit and has no checkout — CED-32 moved the guide onto the docs site.
+    assert "https://sdlctools.github.io/cedit/docs/userguide/limits" in captured.err
 
 
 @pytest.mark.parametrize("md", OVERFLOWING + STABLE + [JIRA_REST])
