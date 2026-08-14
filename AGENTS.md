@@ -170,8 +170,11 @@ cd website && npm start                 # live reload against ../docs
 
 **Versions are cut by the release, not by hand.** `release.yml` runs
 `docusaurus docs:version <X.Y.Z>` on `main` after the version bump and the
-PyPI build, then calls `docs.yml` to publish — a `GITHUB_TOKEN` push
-triggers no workflow, so the call is what actually deploys it. This matters
+PyPI build, then *dispatches* `docs.yml` against `main` to publish it — a
+`GITHUB_TOKEN` push triggers no workflow (a dispatch always does), and a run
+whose ref is not `main` is refused by the Pages environment. Invariant 7 in
+[.claude/rules/release-pipeline.md](.claude/rules/release-pipeline.md) has
+both halves and the design that got this wrong once. This matters
 more here than on a typical library: a hash-moving release is a breaking
 change to consumers' on-disk `.cedit/` state, and a reader on an older cedit
 needs the docs that describe the parser their hashes were taken under.

@@ -273,8 +273,10 @@ venv/bin/python3 -m twine upload dist/*
 
 ### 7b. Publish the docs site
 
-In CI this is `release.yml`'s `publish-docs` job. By hand it is one dispatch,
-because everything the build needs is already on `main`:
+In CI this is `release.yml`'s `publish-docs` job, and it runs the *same*
+command this step does — so by hand you are not approximating the automation,
+you are running it yourself. A by-hand release never runs `release.yml`, so
+nothing dispatches on its own and this step is not optional:
 
 ```bash
 gh workflow run "Docs site" --ref main

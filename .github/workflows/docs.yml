@@ -5,17 +5,35 @@
 # CI spent to publish the identical bytes. The filter is docs/**, website/**
 # and this file — the three inputs the built site is a function of.
 #
-# Three triggers, and each exists for a different reason:
+# Two triggers, and each exists for a different reason:
 #
 #   push (main, filtered) — the ordinary path. A merged PR that touched the
 #     docs republishes them.
-#   workflow_dispatch     — the manual escape hatch, for a Pages
-#     misconfiguration fixed on github.com rather than in this repo.
-#   workflow_call         — release.yml calls this after it cuts a docs
-#     version, and MUST: that step's commit is pushed by GITHUB_TOKEN, and a
-#     GITHUB_TOKEN push triggers no workflows (invariant 2 in
-#     .claude/rules/release-pipeline.md). Without the call, a release's docs
-#     version would sit unpublished until the next unrelated docs push.
+#   workflow_dispatch     — everything else, and it carries more weight than
+#     "manual escape hatch" suggests: release.yml's publish-docs job fires
+#     exactly this trigger, with --ref main, and it is also how a human
+#     recovers a deploy that did not happen. A release cuts a docs version
+#     and pushes it with GITHUB_TOKEN, and a GITHUB_TOKEN *push* triggers no
+#     workflows (invariant 2 in .claude/rules/release-pipeline.md), so the
+#     `push` trigger above never sees that commit. A GITHUB_TOKEN
+#     *workflow_dispatch* is the documented exception that always does
+#     create a run.
+#
+# THE REF IS THE WHOLE POINT, and it is why this is not a `workflow_call`.
+# release.yml used to invoke this file as a reusable workflow. It published
+# nothing, for a reason invisible in the YAML: a called workflow runs in the
+# CALLER's context, so `github.ref` stayed `refs/pull/<n>/merge` from
+# release.yml's pull_request trigger. The `github-pages` environment carries
+# a deployment branch policy naming exactly one ref — `main` — so the build
+# succeeded and the deploy was refused:
+#
+#   Branch "refs/pull/58/merge" is not allowed to deploy to github-pages
+#   due to environment protection rules.
+#
+# Passing `ref: main` did not help and could not: that input only told
+# actions/checkout what to fetch, while the environment gate reads the run's
+# own ref, which no input can change. A dispatch creates its own run at
+# `refs/heads/main`, which is the ref the environment allows.
 #
 # PRECONDITION, not fixable from this repository: Settings -> Pages -> Build
 # and deployment -> Source must be set to "GitHub Actions". Until a human
@@ -31,16 +49,6 @@ on:
       - 'website/**'
       - '.github/workflows/docs.yml'
   workflow_dispatch:
-  workflow_call:
-    inputs:
-      ref:
-        description: >-
-          Git ref to build the site from. release.yml passes 'main' so the
-          deploy carries the docs version it has just cut and pushed; the
-          default builds whatever ref triggered the run.
-        type: string
-        required: false
-        default: ''
 
 # Serialize deploys without cancelling one in flight: a half-deployed Pages
 # site is worse than a slightly stale one.
@@ -61,7 +69,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.ref || github.ref }}
+          # No explicit ref: every trigger already aims the run at the right
+          # one. push is main by the filter above, and a dispatch runs at
+          # whatever --ref named — main from release.yml, or a branch a human
+          # is testing.
           # docs.showLastUpdateTime reads the git history of each file. A
           # shallow clone silently degrades that to "cannot infer the update
           # date" warnings and no timestamps on the page.
