@@ -195,3 +195,70 @@ def test_the_docs_site_stays_out_of_the_distribution():
         )
 
     assert pyproject["project"]["readme"] == "README.md"
+
+
+_FENCE = re.compile(r"^\s*(```|~~~)")
+_CODE_SPAN = re.compile(r"`[^`]*`")
+_IMAGE = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
+_REMOTE = re.compile(r"^(https?:|data:|pathname://|/)")
+
+
+def _prose_images(md: str):
+    """Every image URL in `md` that is prose, not an example inside code."""
+    out, in_fence = [], False
+    for line in md.splitlines():
+        if _FENCE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        for url in _IMAGE.findall(_CODE_SPAN.sub("", line)):
+            out.append(url.split()[0].strip("<>"))
+    return out
+
+
+def test_docs_images_resolve_from_inside_docs():
+    """A relative image in `docs/` must point at a file inside `docs/`.
+
+    This is the guard for the one way a docs page can be correct in the
+    repository, correct on GitHub, correct in a site build, and still break
+    the release — which is exactly what happened on v0.3.4.
+
+    `docusaurus docs:version` snapshots `docs/` and nothing else. An image
+    that lives outside it resolves only by accident of depth:
+    `docs/userguide/index.md` reaching `../../assets/x.png` lands on the
+    repository root, but the snapshot of that same file at
+    `website/versioned_docs/version-X/userguide/index.md` lands on
+    `website/versioned_docs/assets/x.png`, which does not exist. Images are
+    resolved by webpack rather than by the link checker, so it is a hard
+    build failure, and it appears in the release run — after review, after
+    merge, with the broken snapshot already committed and unrepeatable.
+
+    Both trees are scanned, because the snapshot is what actually broke and
+    a hand-repaired one can drift from its source. Remote and site-absolute
+    URLs are somebody else's problem; only local paths are checked, and only
+    in prose — an `![alt](url)` written as an example inside a fence or a
+    code span is documentation about Markdown, not a reference to a file.
+    """
+    roots = [ROOT / "docs"]
+    versioned = ROOT / "website" / "versioned_docs"
+    if versioned.is_dir():
+        roots.append(versioned)
+
+    checked = 0
+    for root in roots:
+        for page in sorted(root.rglob("*.md")):
+            for url in _prose_images(page.read_text("utf-8")):
+                if _REMOTE.match(url):
+                    continue
+                target = (page.parent / url.split("#")[0]).resolve()
+                rel = page.relative_to(ROOT)
+                assert target.is_file(), f"{rel}: image not found: {url}"
+                assert target.is_relative_to(root.resolve()), (
+                    f"{rel}: image {url} escapes {root.name}/ — it will not "
+                    "survive `docusaurus docs:version`, which snapshots that "
+                    "directory and nothing else"
+                )
+                checked += 1
+
+    assert checked, "no local images found — has the scan stopped seeing them?"
