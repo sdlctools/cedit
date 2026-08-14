@@ -4,11 +4,12 @@
 //
 // This file used to name all four documents explicitly, on the argument that
 // their order is editorial and autogeneration would re-sort them. Splitting
-// the user guide into 23 files made the second half of that argument stop
-// holding and the first half stop scaling: `sidebar_position` in each page's
-// front matter and `position` in each `_category_.json` carry the order, so
-// autogeneration reproduces it exactly, and a page added without a position
-// lands at the end rather than displacing anything.
+// the user guide into 20 files — an index and 19 chapters — made the second
+// half of that argument stop holding and the first half stop scaling:
+// `sidebar_position` in each page's front matter and `position` in each
+// `_category_.json` carry the order, so autogeneration reproduces it exactly,
+// and a page added without a position lands at the end rather than
+// displacing anything.
 //
 // Where the order actually comes from:
 //   docs/*.md                        sidebar_position 2, 3, 4

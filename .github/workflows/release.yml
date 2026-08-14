@@ -296,7 +296,7 @@ jobs:
           cache: npm
           cache-dependency-path: website/package-lock.json
 
-      - name: Cut a docs version for ${NEXT}
+      - name: Cut a docs version for ${{ steps.version.outputs.next }}
         id: docs_version
         env:
           NEXT: ${{ steps.version.outputs.next }}
@@ -418,9 +418,21 @@ jobs:
   # declares `workflow_call` at all. It builds `main`, which by now carries
   # both the version bump and the new versioned_docs snapshot.
   #
-  # Not `needs: release` alone: `if: success()` would still run this after a
-  # PyPI upload failure, which is correct — the docs are publishable whether
-  # or not the OIDC exchange worked.
+  # `needs: release` and no `if:`, so this runs only when the release job
+  # SUCCEEDED — including its last step, *Publish to PyPI*, whose OIDC
+  # exchange is the one realistic failure in this job (invariant 6 in
+  # .claude/rules/release-pipeline.md). A release that gets everything else
+  # done and then fails that upload therefore leaves a docs version cut and
+  # pushed to main that the site has not published, with no failed docs run
+  # to notice.
+  #
+  # That is accepted rather than worked around: `if:` cannot express "failed,
+  # but only after the docs were ready", and the alternatives are worse —
+  # `always()` would publish from a release that died before the docs cut,
+  # and continue-on-error on the upload would hide the failure it is there to
+  # surface. The recovery is operational and already in
+  # release-pipeline.md's failure table: re-run "Docs site" via
+  # workflow_dispatch, since main by then carries everything the build needs.
   publish-docs:
     name: Publish the docs site
     needs: release
