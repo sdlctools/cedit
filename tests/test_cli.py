@@ -2,11 +2,14 @@
 scenario: vendor a skill, adapt bash→zsh locally, keep syncing upstream.
 """
 
+import importlib.metadata
 import json
 import os
 
+import mdformat.plugins
 import pytest
 
+import cedit
 from cedit import cli
 from cedit.blocks import canonicalise
 
@@ -408,3 +411,110 @@ def test_footnotes_survive_a_snapshot_sync_cycle(repo, capsys):
     assert "\\[^" not in merged                                     # still unescaped
     assert "[^unused]: A definition nothing references." in merged  # orphan still there
     assert manifest(repo)["docs"][NOTES]["conflicts"] == {}
+
+
+# --------------------------------------------------------------------------
+# `--version` / `--help` — CED-33
+#
+# The flag reports what the parser *is*, which is the first question any
+# conflict report needs answered: every hash in a consumer's `.cedit/` state
+# is a function of the parsing stack and of the mdformat plugins installed
+# alongside it (AGENTS.md invariant 2). These tests pin the parts of that
+# block a reader is told to compare against a baseline.
+#
+# `main()` returns an int; the version and help actions instead exit during
+# parsing, so they are asserted with `pytest.raises(SystemExit)` rather than
+# by relaxing main()'s contract to accommodate them.
+# --------------------------------------------------------------------------
+
+
+def test_version_exits_zero_with_no_subcommand(capsys):
+    """`add_subparsers(required=True)` must not defeat `--version`.
+
+    argparse runs an option's action during parsing, before it checks that a
+    required subparser was supplied — but that ordering is the whole reason
+    the flag is usable, so it is asserted rather than assumed.
+    """
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["--version"])
+    assert exc.value.code == 0
+
+    first = capsys.readouterr().out.splitlines()[0]
+    assert first == f"cedit {cedit.__version__}"
+
+
+def test_version_reports_the_stack_resolved_at_runtime(capsys):
+    """Every pinned distribution, at the version actually installed.
+
+    Hard-coding the list from requirements.txt would report the pin while the
+    user runs something else entirely — the precise failure this flag exists
+    to diagnose — so the assertion is against the live metadata.
+    """
+    with pytest.raises(SystemExit):
+        cli.main(["--version"])
+    out = capsys.readouterr().out
+
+    assert "Python " in out
+    # The stack line wraps, so match against it flattened rather than pinning
+    # a layout the criteria explicitly leave to the implementer.
+    flat = " ".join(out.split())
+    for name in cli._STACK:
+        assert f"{name} {importlib.metadata.version(name)}" in flat
+
+
+def test_version_reports_the_installed_mdformat_plugin_set(capsys):
+    """The highest-value line: `make_parser` never names its extensions.
+
+    It appends every entry it finds in the environment, so an unrelated
+    `pip install` changes what the parser is without touching any pin. This
+    line is what .claude/rules/hash-stability.md asks an affected user to
+    compare against the baseline's, without needing a Python REPL.
+    """
+    with pytest.raises(SystemExit):
+        cli.main(["--version"])
+    out = capsys.readouterr().out
+
+    plugins = sorted(mdformat.plugins.PARSER_EXTENSIONS)
+    assert plugins, "no mdformat plugins installed — the environment is wrong"
+    assert f"mdformat plugins: {', '.join(plugins)}" in out
+
+
+def test_help_shows_both_the_flag_and_the_resolved_version(capsys):
+    """`cedit --help` alone has to identify the build.
+
+    Only the first line, though: the stack block belongs to `--version`, not
+    to every help screen.
+    """
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["--help"])
+    assert exc.value.code == 0
+
+    out = capsys.readouterr().out
+    assert "--version" in out                  # the standard options row
+    assert cedit.__version__ in out            # and the build itself
+    assert "mdformat plugins:" not in out      # but not the whole block
+
+
+def test_version_degrades_rather_than_raising_when_nothing_is_installed(
+        capsys, monkeypatch):
+    """A diagnostic must survive the broken environment it describes.
+
+    `importlib.metadata.version` raises `PackageNotFoundError` for anything
+    not installed, and the test suite itself runs from an uninstalled source
+    checkout (conftest.py puts the repo root on sys.path), so a naive lookup
+    would traceback here rather than in some consumer's terminal.
+    """
+    def _raise(name):
+        raise importlib.metadata.PackageNotFoundError(name)
+
+    monkeypatch.setattr(importlib.metadata, "version", _raise)
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["--version"])
+    assert exc.value.code == 0
+
+    out = capsys.readouterr().out
+    assert out.startswith(f"cedit {cedit.__version__}")
+    flat = " ".join(out.split())
+    for name in cli._STACK:
+        assert f"{name} (not installed)" in flat

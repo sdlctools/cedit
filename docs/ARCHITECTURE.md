@@ -205,9 +205,9 @@ Called after every resolution that changes either side.
 ### The argparse surface
 
 `build_arg_parser` (`cli.py:334`). Global `--state-dir` (default `.cedit` —
-resolved in `state.State`, not here, so the default is `None` at this level).
-`sub = parser.add_subparsers(dest="command", required=True)`; each subparser
-sets `func` via `set_defaults`.
+resolved in `state.State`, not here, so the default is `None` at this level)
+and global `--version`. `sub = parser.add_subparsers(dest="command",
+required=True)`; each subparser sets `func` via `set_defaults`.
 
 | Subcommand | Positional | Options |
 | --- | --- | --- |
@@ -225,6 +225,38 @@ attribute is `args.from_`.
 `mdcli.add_md_group(sub)` (`cli.py:378`) and the verbs live in `mdcli.py`.
 The nesting is deliberate — it keeps top-level `--help` honest that those
 verbs obey a different contract (no state, and `--state-dir` is inert).
+
+### `--version` — reporting what the parser is
+
+Three small pieces sit just above the parser, and the reason they are
+verbose rather than a bare version number is invariant 2: every hash in a
+consumer's `.cedit/` state is a function of the parsing stack **and** of the
+mdformat plugins installed beside it, which `mdcore.utils.make_parser`
+enumerates from the environment rather than naming.
+
+**`_STACK`** — the seven distributions `requirements.txt` pins, in print
+order. Only the *names* live here; the versions come from
+`importlib.metadata` at run time, because reporting the pin while the user
+runs something else is the failure the flag exists to diagnose.
+
+**`_dist_version(name)`** — one lookup, returning `(not installed)` instead
+of raising `PackageNotFoundError`. The suite itself runs from an uninstalled
+checkout, so a naive lookup here breaks every test at import.
+
+**`_version_block()`** — the four-part block: `cedit <version>` (from
+`cedit.__version__`, the distribution metadata, never a second literal),
+the running Python, the wrapped stack line, and
+`sorted(mdformat.plugins.PARSER_EXTENSIONS)`. That last line is what
+[hash-stability.md](https://github.com/sdlctools/cedit/blob/main/.claude/rules/hash-stability.md)'s
+failure-mode table asks an affected user to compare against the baseline's.
+
+**`_VersionAction`** — a custom `argparse.Action` rather than
+`action="version"`, for two independent reasons. argparse takes the version
+*string* at parser-construction time, so the built-in would make every
+`cedit sync` pay for enumerating installed distributions; and it prints that
+string through the help formatter, which reflows it into one ragged
+paragraph. Only the first line reaches `--help`, via the parser's
+`description` — the whole block on every help screen would bury the usage.
 
 ### Exit-code policy — invariant 4
 

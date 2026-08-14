@@ -24,7 +24,9 @@ you; a dedicated virtualenv does the same. The reason is the pins below:
 extension, so the set of mdformat plugins in the environment is part of the
 parser identity. A shared environment carrying other mdformat plugins can
 move the hashes in your `.cedit/` state even though cedit's own pinned
-dependencies were honoured.
+dependencies were honoured. `cedit --version` prints that plugin set along
+with the stack it resolved at runtime, which is how you check
+([Global options](../command-reference/global-options.md)).
 
 Working on cedit itself rather than using it? Install from a clone instead:
 
