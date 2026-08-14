@@ -5,7 +5,7 @@ The hashing and segmentation engine. cedit uses it for segmentation
 (`is_unit`, `OPAQUE`, `_unit_source`), hashing (`hash_tree` — every hash in
 `.cedit/` state is one of these), similarity (`ratio` and the two
 thresholds) and the `diff` view's clipping. FROZEN: a change here moves
-every recorded hash. The design rationale is `SPEC.md`; the procedure for
+every recorded hash. The design rationale is `docs/SPEC.md`; the procedure for
 changing it anyway is `.claude/rules/hash-stability.md`.
 
 Why Merkle hashing: hash(node) = H(type, tag, own_text, hash(c1)…hash(cn)).
@@ -31,7 +31,8 @@ from markdown_it.tree import SyntaxTreeNode
 # Blocks that carry prose. In markdown-it's tree these are exactly the nodes
 # owning an `inline` child: that child's `.content` is the raw markdown source
 # of the segment (`` Reference for `x`. Read **this** ``) — the text a local
-# adaptation rewrites. SPEC.md, *Edit blocks*, maps this module's vendored names.
+# adaptation rewrites. docs/SPEC.md, *Edit blocks*, maps this module's
+# vendored names.
 UNIT_PARENTS = {"heading", "paragraph", "th", "td"}
 
 # Opaque blocks: hashed, so a change or a move is noticed, but never units.

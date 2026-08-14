@@ -6,8 +6,12 @@ Operational reference for the three workflows that version this repo:
 what, who owns the version number at each step, and the failure modes that
 are not obvious from reading the YAML.
 
+A fourth workflow, `docs.yml`, is not a versioning workflow but is driven by
+one: `release.yml` cuts a Docusaurus docs version and then *calls* `docs.yml`
+to publish it. Invariant 7 is why the call exists.
+
 **This file is a reference, not an instruction set.** Like
-[ARCHITECTURE.md](../../ARCHITECTURE.md) it is deliberately not
+[ARCHITECTURE.md](../../docs/ARCHITECTURE.md) it is deliberately not
 `@`-imported by `AGENTS.md` — read it when you are about to touch
 `.github/workflows/`, cut a release, or explain why a release did not
 happen.
@@ -17,7 +21,7 @@ Where the other documents stop:
 | Document | Answers |
 | --- | --- |
 | [AGENTS.md](../../AGENTS.md) | branch naming, Jira keys, gitflow parents, the local pytest gate |
-| [ARCHITECTURE.md](../../ARCHITECTURE.md) | the implementation, and what to touch to change it |
+| [ARCHITECTURE.md](../../docs/ARCHITECTURE.md) | the implementation, and what to touch to change it |
 | the SDLC policy | *why* the phases exist (feature freeze, QA on the branch, hotfix path) |
 | [manual-release.md](manual-release.md) | how to drive the same release by hand when the automation cannot finish |
 | **this file** | what the automation actually does, and how it breaks |
@@ -65,9 +69,12 @@ human marks the draft PR ready and merges it into main
                         gh release create (notes from the previous plain tag)
                         bump pyproject on main, push
                         build sdist+wheel from the BUMPED tree, verify, twine check
+                        docusaurus docs:version X.Y.Z on main, commit, push
                         back-merge main -> development (PR on conflict)
                         delete release/sprint-X.Y.Z
                         upload dist/ to PyPI (Trusted Publishing, OIDC)
+                     ──► publish-docs job: calls docs.yml with ref=main
+                        (a GITHUB_TOKEN push fires nothing — invariant 2)
 ```
 
 A `hotfix/*` PR merged into `main` enters the same `release.yml` at the
@@ -194,6 +201,31 @@ failure leaves everything else already done. Trusted Publishing also needs
 workflow filename* — rename `release.yml` and the OIDC exchange stops
 matching.
 
+The **docs version cut** (CED-32) is the one step added since, and it sits
+*after* the build for this reason and no other. It touches only `website/`,
+which the distribution does not contain — `tests/test_packaging.py::test_the_docs_site_stays_out_of_the_distribution`
+is the guard — so it has nothing to contribute to `dist/` and every reason to
+stay out of the bump→build pair. Moving it between them buys nothing and
+re-opens this invariant.
+
+### 7. The docs site is published by a *call*, not by the push
+
+`release.yml`'s `publish-docs` job calls `docs.yml` as a reusable workflow
+(`uses: ./.github/workflows/docs.yml`, `with: ref: main`). That is not
+stylistic: the docs-version commit is pushed by `GITHUB_TOKEN`, and by
+invariant 2 such a push emits no workflow runs, so `docs.yml`'s own `push`
+trigger never fires for it. Replace the call with a "docs.yml will pick it
+up" assumption and the release's docs sit unpublished until the next
+unrelated docs push — silently, with no failed run to notice.
+
+Two consequences worth keeping straight:
+
+- `docs.yml` must keep its `workflow_call` trigger and its `ref` input.
+  Removing either breaks the release, not just the docs.
+- The caller declares the Pages permissions (`pages: write`,
+  `id-token: write`) at the *job* level. A reusable workflow does not inherit
+  the caller's workflow-level block.
+
 ## Failure modes and what they mean
 
 | Symptom | Cause | Fix |
@@ -208,6 +240,10 @@ matching.
 | No `vX.Y.Z-dev.1` after a release | invariant 2, not a bug | it appears on the next push to `development` |
 | `Release` fails at *Publish to PyPI*, everything else done | no pending publisher on pypi.org for this repo + workflow, or the OIDC exchange was refused | configure the Trusted Publisher, then upload `dist/` by hand from a checkout of `main` (which carries the bumped version) — do **not** re-run the job, the tag step would fail |
 | `Release` fails at *Build sdist + wheel and verify* | the built version does not match the tag — the build ran against a tree that was not bumped (invariant 6) | fix the step order; nothing was uploaded, so the version is not burned |
+| `Docs site` (or `publish-docs`) fails at *Deploy*: *Get Pages site failed* | GitHub Pages was never enabled for the repository | Settings → Pages → Source → **GitHub Actions**, then re-run the workflow. No change in this repo can substitute |
+| `Release` fails at *Cut a docs version*: *Version X.Y.Z already exists* | the step ran once before, or the version was cut by hand on the release branch | the step already guards on `website/versioned_docs/version-X.Y.Z` and skips; if it still fires, remove the stray directory or accept the existing snapshot |
+| Release completed, site still shows the previous version | `publish-docs` did not run, or the deploy failed after the release job succeeded | re-run `Docs site` via `workflow_dispatch` — everything it needs is already on `main` |
+| A source-only push to `main` built the site | the path filter in `docs.yml` was widened, or a touched file matched `website/**` | the filter is `docs/**`, `website/**` and `docs.yml` itself; narrow it back rather than accepting the noise |
 
 ### Recovering a release that never fired
 

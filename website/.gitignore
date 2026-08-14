@@ -1,0 +1,15 @@
+# Docusaurus build + dependency output. Nothing under website/ that is
+# generated belongs in the repository; versioned_docs/, versioned_sidebars/
+# and versions.json are the exception and ARE committed — they are the docs
+# snapshot release.yml cuts on every vX.Y.Z tag.
+/node_modules
+/build
+/.docusaurus
+/.cache-loader
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+.DS_Store

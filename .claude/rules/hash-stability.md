@@ -22,8 +22,8 @@ Where the other documents stop:
 | Document | Answers |
 | --- | --- |
 | [AGENTS.md](../../AGENTS.md) | invariant 1 (`mdcore/` is frozen) and invariant 2 (the pins are exact) — the rules |
-| [SPEC.md](../../SPEC.md) | *Reuse rules* — which parts must not fork, and why the merge rests on them |
-| [ARCHITECTURE.md](../../ARCHITECTURE.md) | what every symbol in `mdcore/` does, and which ones cedit calls |
+| [SPEC.md](../../docs/SPEC.md) | *Reuse rules* — which parts must not fork, and why the merge rests on them |
+| [ARCHITECTURE.md](../../docs/ARCHITECTURE.md) | what every symbol in `mdcore/` does, and which ones cedit calls |
 | **this file** | how to change any of it safely, how to prove you did, and what consumers do when hashes moved |
 
 ## What `cedit/mdcore/` is

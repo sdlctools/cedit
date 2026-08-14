@@ -1,3 +1,10 @@
+---
+id: architecture
+slug: /architecture
+sidebar_label: Architecture
+sidebar_position: 3
+---
+
 # cedit architecture
 
 Code-level reference for the `cedit` implementation: what every module,
@@ -14,12 +21,12 @@ Where the other documents stop:
 
 | Document | Answers |
 | --- | --- |
-| [README.md](README.md) | setup, quickstart, exit codes, repo layout |
-| [USERGUIDE.md](USERGUIDE.md) | command reference, task flows, conflict lifecycle, troubleshooting |
+| [README.md](https://github.com/sdlctools/cedit/blob/main/README.md) | setup, quickstart, exit codes, repo layout |
+| [User guide](userguide/index.md) | command reference, task flows, conflict lifecycle, troubleshooting |
 | [SPEC.md](SPEC.md) | normative design — merge matrix, sync algorithm, state format, reuse rules, phases |
-| [AGENTS.md](AGENTS.md) | orientation and the five invariants |
-| [.claude/rules/release-pipeline.md](.claude/rules/release-pipeline.md) | the three versioning workflows and how they break |
-| [.claude/rules/hash-stability.md](.claude/rules/hash-stability.md) | changing `mdcore/` or the pins without moving consumers' hashes |
+| [AGENTS.md](https://github.com/sdlctools/cedit/blob/main/AGENTS.md) | orientation and the five invariants |
+| [.claude/rules/release-pipeline.md](https://github.com/sdlctools/cedit/blob/main/.claude/rules/release-pipeline.md) | the three versioning workflows and how they break |
+| [.claude/rules/hash-stability.md](https://github.com/sdlctools/cedit/blob/main/.claude/rules/hash-stability.md) | changing `mdcore/` or the pins without moving consumers' hashes |
 | **this file** | the implementation that realises them, and how to change it |
 
 Nothing here restates behaviour those five define. Where a design decision
@@ -242,7 +249,7 @@ returns 0 or 2.
 Five verbs that open no state at all. They exist because `mdcore/` is
 otherwise unobservable: it is frozen because every consumer's hashes depend
 on it, and per
-[hash-stability.md](.claude/rules/hash-stability.md) the failure mode is
+[hash-stability.md](https://github.com/sdlctools/cedit/blob/main/.claude/rules/hash-stability.md) the failure mode is
 *quiet*. Before this group the only instruments were
 `tests/parser_contract.py` — one fixed fixture — and ad-hoc `python3 -c`.
 
@@ -806,7 +813,7 @@ hashing or segmentation moves every hash already recorded in consumers'
 `.cedit/` state, turning their next `sync` into a wall of false conflicts
 against blocks nobody touched. Deliberate changes are possible and have a
 runbook of their own:
-[.claude/rules/hash-stability.md](.claude/rules/hash-stability.md) — how to
+[.claude/rules/hash-stability.md](https://github.com/sdlctools/cedit/blob/main/.claude/rules/hash-stability.md) — how to
 tell a hash-moving change from a hash-neutral one, the drift check
 (`tests/parser_contract.py`) that decides it, and what consumers do when
 hashes moved. See also *Reuse rules* in SPEC.md and invariant 1 in AGENTS.md.
@@ -1029,7 +1036,7 @@ instructive contrast — a guard that sits on the same path and still moves
 no hash, because what it carries was never in the tree. Which class a guard
 falls into is measured, not assumed from where it lives. Where a hash-moving change is
 genuinely required, it goes through
-[.claude/rules/hash-stability.md](.claude/rules/hash-stability.md): classify
+[.claude/rules/hash-stability.md](https://github.com/sdlctools/cedit/blob/main/.claude/rules/hash-stability.md): classify
 it, re-record the baseline in the same commit, and say so in the release
 notes.
 
@@ -1072,13 +1079,17 @@ as `canonicalize --check` does, that 1 really means "a human needs to look".
 
 It is cheaper, not free. A new verb still has to be **listed in five
 places**, and CED-24 was the task of paying that debt down for the group's
-first five: the verb table and a worked example in `USERGUIDE.md` §5.7 — a
-real captured run against the §4 tour document, per that section's own rule,
-never hand-written output — the `md` column of the exit-code matrix in §16,
-the usage block in `README.md` (*Looking at the parser directly*), the verb
-table in this file's `mdcli.py` section, and `tests/test_mdcli.py`. The
-`--help` transcript at `USERGUIDE.md:284` and `:290` lists the *group*, not
-its verbs, so a new verb does not touch it.
+first five: the verb table and a worked example on the guide's
+[`md` — stateless parser views](userguide/command-reference/md-parser-views.md)
+page — a real captured run against the
+[five-minute tour](userguide/getting-started/five-minute-tour.md) document,
+per that page's own rule, never hand-written output — the `md` column of the
+exit-code matrix in the guide's
+[appendix](userguide/help/appendix.md#exit-codes), the usage block in
+`README.md` (*Looking at the parser directly*), the verb table in this
+file's `mdcli.py` section, and `tests/test_mdcli.py`. The `--help` transcript
+on that same parser-views page lists the *group*, not its verbs, so a new
+verb does not touch it.
 
 Six places, and the last three are what gets forgotten:
 
@@ -1094,15 +1105,21 @@ Six places, and the last three are what gets forgotten:
 4. `tests/test_cli.py` — drive it through `cli.main` in a `tmp_path` repo,
    as the existing tests do; assert the exit code, not just the output.
 5. **The count "five" and the literal subcommand list are hard-coded in
-   eight doc locations** — `README.md:20`, `:117` and the layout table at
-   `:147`, `AGENTS.md`'s architecture table (`AGENTS.md:78`), and in
-   `USERGUIDE.md` the TOC entry (`:18`), the §3 heading (`:129`) and both
-   lines of the `--help` transcript (`:284`, `:290`). The per-command
-   exit-code matrix at `USERGUIDE.md:1829` names the commands without
-   counting them, and `SPEC.md` §CLI deliberately says "same subcommand set"
-   instead of a number. Nothing tests any of this, and these line numbers go
-   stale every time the guide grows — grep for `five subcommands` and for the
-   literal `{snapshot,diff,sync,status,resolve,md}`, which is the string the
+   eight doc locations** — in `README.md` the documentation table, the
+   *Looking at the parser directly* usage block and the layout table;
+   `AGENTS.md`'s architecture table; and in the guide the
+   [contents list](userguide/index.md), the
+   [The five subcommands](userguide/command-reference/index.md) page, and
+   both lines of the `--help` transcript on
+   [`md` — stateless parser views](userguide/command-reference/md-parser-views.md).
+   The per-command exit-code matrix in the guide's
+   [appendix](userguide/help/appendix.md#exit-codes) names the commands
+   without counting them, and `SPEC.md` §CLI deliberately says "same
+   subcommand set" instead of a number. Nothing tests any of this. These
+   used to be line numbers and went stale exactly as predicted the first
+   time the guide moved (CED-32), so they are locations now — grep for
+   `five subcommands` and for the literal
+   `{snapshot,diff,sync,status,resolve,md}`, which is the string the
    `--help` transcript actually carries now that the group is wired in.
 6. If it can write, route it through `store.atomic_write_text` and mirror
    `cmd_sync`'s ordering: working file first, state second.
@@ -1112,7 +1129,7 @@ Six places, and the last three are what gets forgotten:
 The block classes are `tree_diff.UNIT_PARENTS` and `tree_diff.OPAQUE`
 (`tree_diff.py:42,45`) — **frozen**, and this is hash-moving by row 5 of the
 table above. Assuming that is settled through
-[.claude/rules/hash-stability.md](.claude/rules/hash-stability.md), the rest
+[.claude/rules/hash-stability.md](https://github.com/sdlctools/cedit/blob/main/.claude/rules/hash-stability.md), the rest
 of the work is:
 
 1. `blocks.parse_doc` (`blocks.py:101`) — the walk already keys off those
@@ -1209,12 +1226,14 @@ Then, in order of how easily each is forgotten:
 - Did you move hashes? If yes, stop and re-read the blast radius — this is
   a release-note-and-migration change, not a patch.
 - Did the change alter the doc-visible surface (a flag, an exit code, an
-  output line)? USERGUIDE §5 is per-flag and will drift silently.
+  output line)? The guide's
+  [command reference](userguide/command-reference/index.md) is per-flag and
+  will drift silently.
 - Did you edit anything under `cedit/mdcore/`? That is invariant 1 — read
-  [.claude/rules/hash-stability.md](.claude/rules/hash-stability.md) and run
+  [.claude/rules/hash-stability.md](https://github.com/sdlctools/cedit/blob/main/.claude/rules/hash-stability.md) and run
   `venv/bin/python3 tests/parser_contract.py`.
 - Did you touch `.github/workflows/`? Read
-  [.claude/rules/release-pipeline.md](.claude/rules/release-pipeline.md)
+  [.claude/rules/release-pipeline.md](https://github.com/sdlctools/cedit/blob/main/.claude/rules/release-pipeline.md)
   first — and never put a CI skip marker in a commit subject.
 - Did you add a Python version, a classifier or a matrix leg? All three
   move together or `test_supported_pythons_are_the_tested_pythons` fails.

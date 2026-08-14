@@ -7,9 +7,12 @@
 #   3. publish the GitHub Release (= "deploy main to Production" — there's
 #      no separate deploy step for this repo)
 #   4. bump pyproject.toml on main, then build + verify the distribution
-#   5. back-merge main -> development  (§3 Phase 4 step 6 / §4 Step 4)
-#   6. delete the release/hotfix branch (§3 Phase 4 step 7)
-#   7. upload the built sdist + wheel to PyPI
+#   5. cut a Docusaurus docs version for vX.Y.Z on main (website/ only —
+#      after the build, so invariant 6 in release-pipeline.md still holds)
+#   6. back-merge main -> development  (§3 Phase 4 step 6 / §4 Step 4)
+#   7. delete the release/hotfix branch (§3 Phase 4 step 7)
+#   8. upload the built sdist + wheel to PyPI
+#   9. (separate job) call docs.yml to publish the site from main
 #
 # Only fires for release/* and hotfix/* head branches — a feature PR merged
 # straight into main does NOT trigger a release (the `if:` guard below).
@@ -267,6 +270,60 @@ jobs:
           echo "artifacts verified against ${NEXT}:"
           ls -1 dist
 
+      # AFTER the build, never before it. Invariant 6 in
+      # .claude/rules/release-pipeline.md pins the build immediately behind
+      # the version bump, because that is the only point at which the tree
+      # carries the release version and a PyPI filename cannot be corrected
+      # once uploaded. This step only adds files under website/, which the
+      # distribution does not contain (tests/test_packaging.py asserts it),
+      # so it has nothing to contribute to dist/ and every reason to stay
+      # out of its way.
+      #
+      # Why version the docs at all: a hash-moving release is a breaking
+      # change to consumers' on-disk .cedit/ state, so a reader still on an
+      # older cedit needs the guide, the spec and the architecture map as
+      # they stood for THAT version — not the ones describing a parser their
+      # recorded hashes no longer match.
+      #
+      # `docusaurus docs:version X.Y.Z` snapshots ../docs into
+      # website/versioned_docs/version-X.Y.Z/, writes the matching sidebar
+      # and prepends the version to website/versions.json. All three are
+      # committed; only node_modules/ and build/ are ignored.
+      - name: Set up Node for the docs version cut
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - name: Cut a docs version for ${{ steps.version.outputs.next }}
+        id: docs_version
+        env:
+          NEXT: ${{ steps.version.outputs.next }}
+        run: |
+          set -euo pipefail
+          NEXT_NO_V="${NEXT#v}"
+
+          # Already on main from the bump step, but be explicit: this commit
+          # must land on main, not on the detached merge commit.
+          git checkout main
+
+          if [ -d "website/versioned_docs/version-${NEXT_NO_V}" ]; then
+            echo "::notice::Docs version ${NEXT_NO_V} already exists; nothing to cut."
+            echo "cut=skipped" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          cd website
+          npm ci
+          npm run docs:version -- "${NEXT_NO_V}"
+          cd ..
+
+          git add website/versioned_docs website/versioned_sidebars website/versions.json
+          git commit -m "docs: cut docs version ${NEXT_NO_V}"
+          git push origin main
+          echo "cut=${NEXT_NO_V}" >> "$GITHUB_OUTPUT"
+
       - name: Back-merge main into development
         id: sync
         env:
@@ -332,6 +389,7 @@ jobs:
           LEVEL: ${{ steps.version.outputs.level }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
           SYNCED: ${{ steps.sync.outputs.synced }}
+          DOCS_CUT: ${{ steps.docs_version.outputs.cut }}
         run: |
           {
             echo "## Release ${NEXT}"
@@ -341,9 +399,47 @@ jobs:
             echo "- tag    : ${NEXT}"
             echo "- release: https://github.com/${{ github.repository }}/releases/tag/${NEXT}"
             echo "- pypi   : https://pypi.org/project/cedit/${NEXT#v}/"
+            case "${DOCS_CUT}" in
+              skipped) echo "- docs   : version already existed — nothing cut" ;;
+              *)       echo "- docs   : cut docs version ${DOCS_CUT}" ;;
+            esac
             case "${SYNCED}" in
               pushed) echo "- sync   : main -> development (pushed)" ;;
               *)      echo "- sync   : back-merge PR opened — ${SYNCED}" ;;
             esac
             echo "- cleanup: deleted \`${HEAD_REF}\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # The docs version cut above is pushed by GITHUB_TOKEN, and a GITHUB_TOKEN
+  # push triggers no workflows (invariant 2 in
+  # .claude/rules/release-pipeline.md) — docs.yml's `push` trigger will not
+  # see it. Calling docs.yml as a reusable workflow from inside this run is
+  # what actually publishes the release's docs, and it is why docs.yml
+  # declares `workflow_call` at all. It builds `main`, which by now carries
+  # both the version bump and the new versioned_docs snapshot.
+  #
+  # `needs: release` and no `if:`, so this runs only when the release job
+  # SUCCEEDED — including its last step, *Publish to PyPI*, whose OIDC
+  # exchange is the one realistic failure in this job (invariant 6 in
+  # .claude/rules/release-pipeline.md). A release that gets everything else
+  # done and then fails that upload therefore leaves a docs version cut and
+  # pushed to main that the site has not published, with no failed docs run
+  # to notice.
+  #
+  # That is accepted rather than worked around: `if:` cannot express "failed,
+  # but only after the docs were ready", and the alternatives are worse —
+  # `always()` would publish from a release that died before the docs cut,
+  # and continue-on-error on the upload would hide the failure it is there to
+  # surface. The recovery is operational and already in
+  # release-pipeline.md's failure table: re-run "Docs site" via
+  # workflow_dispatch, since main by then carries everything the build needs.
+  publish-docs:
+    name: Publish the docs site
+    needs: release
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/docs.yml
+    with:
+      ref: main

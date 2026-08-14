@@ -1,4 +1,4 @@
-"""The 3-way structural merge — SPEC.md's merge matrix, executed.
+"""The 3-way structural merge — docs/SPEC.md's merge matrix, executed.
 
 Three revisions: **B** (base — the upstream the local copy was last synced
 against), **L** (the user's working copy), **U** (the incoming upstream).
@@ -202,7 +202,7 @@ def local_edits(base: ParsedDoc, local: ParsedDoc, *,
 
 def merge(base_md: str, local_md: str, upstream_md: str, *,
           doc_label: str = "<doc>") -> MergeResult:
-    """Merge upstream_md's changes with the local edits — SPEC.md §sync.
+    """Merge upstream_md's changes with the local edits — docs/SPEC.md §sync.
 
     Returns the merged document (upstream structure, local texts spliced) and
     the classification of every base block. Raises StructuralDrift if the

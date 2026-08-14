@@ -1,3 +1,10 @@
+---
+id: canonicalization-reference
+slug: /canonicalization-reference
+sidebar_label: Canonicalization reference
+sidebar_position: 4
+---
+
 # Markdown Elements — `cedit md canonicalize` Handling Reference
 
 | Category | Input Forms | Canonical Output | Notes |

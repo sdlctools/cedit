@@ -5,11 +5,11 @@ Read this before touching the codebase. It is the single entrypoint for
 this file in, so add project instructions here and nowhere else.
 
 Depth lives elsewhere: [README.md](README.md) is the user-facing usage
-(setup, quickstart, exit codes, layout), [USERGUIDE.md](USERGUIDE.md) is the
+(setup, quickstart, exit codes, layout), [the user guide](docs/userguide/) is the
 task-oriented how-to (command reference, flows, conflict lifecycle,
-troubleshooting), [SPEC.md](SPEC.md) is the normative design (merge matrix,
+troubleshooting), [SPEC.md](docs/SPEC.md) is the normative design (merge matrix,
 sync algorithm, state format, reuse rules, phases), and
-[ARCHITECTURE.md](ARCHITECTURE.md) is the code-level map of the
+[ARCHITECTURE.md](docs/ARCHITECTURE.md) is the code-level map of the
 implementation (every module's functions, dataclasses and constants, the
 call graph, where each invariant below is enforced, and the change recipes
 plus hash blast radius for extending it) — **read it before changing
@@ -60,7 +60,7 @@ install.
 
 Use `venv/bin/python3`, not a bare `python3` — the interpreter needs the
 pinned parsing stack, so a bare `python3 -m cedit` fails on
-`ModuleNotFoundError`. README.md and USERGUIDE.md write plain `cedit`
+`ModuleNotFoundError`. README.md and the user guide write plain `cedit`
 because they address someone who installed the published package; here that
 same entry point is `venv/bin/cedit` or `venv/bin/python3 -m cedit`. Tests
 do not need the editable install — the root `conftest.py` covers them.
@@ -86,7 +86,9 @@ before touching either.
 | `cedit/store.py` | atomic writes: temp file in the target dir + `rename(2)` |
 | `cedit/mdcore/` | **frozen**: `utils` (the pinned parser), `tree_diff` (hashing, segmentation, similarity) — every recorded hash is a function of these |
 | `cedit/__main__.py` | `python3 -m cedit` entry — delegates to `cli.main` |
-| `tests/` | `test_merge3.py` (the merge matrix), `test_cli.py` (end-to-end lifecycle), `test_mdcli.py` (the `md` group), `test_mathguard.py` (math-guard precision, both columns re-measured each run), `test_rowguard.py` (table-row preservation, detection precision, and the hash-neutrality claim), `test_packaging.py` (version resolution, pin drift, README link absoluteness), `test_parser_contract.py` (the drift check — invariant 2, enforced) |
+| `tests/` | `test_merge3.py` (the merge matrix), `test_cli.py` (end-to-end lifecycle), `test_mdcli.py` (the `md` group), `test_mathguard.py` (math-guard precision, both columns re-measured each run), `test_rowguard.py` (table-row preservation, detection precision, and the hash-neutrality claim), `test_packaging.py` (version resolution, pin drift, README link absoluteness, docs kept out of the distribution), `test_parser_contract.py` (the drift check — invariant 2, enforced) |
+| `docs/` | the **published** documents — the user guide (`userguide/`, split into chapters), `SPEC.md`, `ARCHITECTURE.md`, `cedit-canonicalization-reference.md`. Plain Markdown, rendered by the site, not rewritten for it |
+| `website/` | the Docusaurus site that publishes `docs/` — its own `package.json`, config, sidebar, landing page and `.gitignore`; never part of the sdist or the wheel. See *The docs site* below |
 
 A `sync` flows in one direction: **parse** B (base), L (local working copy)
 and U (incoming upstream) into block sequences → **align** L against B (the
@@ -95,6 +97,84 @@ base block through the merge matrix → **splice** the REAPPLY/resolved-local
 texts into U's tree → **render and verify** (re-parse the rendered output,
 refuse to write if block structure moved) → **write** the working file
 first, then `.cedit/` state.
+
+## The docs site
+
+`docs/` is published at **<https://sdlctools.github.io/cedit/>** by the
+Docusaurus site in `website/`. Docusaurus *renders* Markdown, it does not
+replace it: every document under `docs/` is still a plain `.md` file that
+reads correctly on GitHub and in an editor, and nothing here is written in
+another format.
+
+**What is published, and what deliberately is not.** Everything in `docs/`
+is. `AGENTS.md`, `CLAUDE.md` and `.claude/rules/` are not, and they stay at
+the repository root: they are read by AI tooling from fixed paths —
+`CLAUDE.md` `@`-imports `AGENTS.md`, the rules files are opened by relative
+path — and publishing them serves no reader. `README.md` also stays, because
+it is the PyPI long description (`readme = "README.md"`).
+
+**The user guide is a directory, not a file.** `docs/userguide/` holds an
+index page and 19 chapters in five groups, each group a subdirectory with a
+`_category_.json`. It was one 2,200-line file until CED-32; the split is what
+makes the left sidebar a table of contents instead of a single entry. Order
+comes from `sidebar_position` in each page's front matter and `position` in
+each `_category_.json` — `website/sidebars.js` autogenerates from those, so
+a new chapter is added by creating one file, in one place.
+
+**Slugs are flat, and that is deliberate.** A chapter at
+`docs/userguide/help/limits.md` is served at `/docs/userguide/limits`, not
+`/docs/userguide/help/limits`, because every page sets an explicit `slug:`.
+The grouping is an editorial decision about the sidebar and may be
+reorganised; the URL is printed into a user's terminal by `mathguard`,
+`rowguard` and `linkguard` and must survive that. Move a chapter between
+groups freely — keep its slug.
+
+**Four link rules**, and a build failure or a silent 404 is what breaks when
+one is ignored:
+
+- *Between published docs* — relative (`](../SPEC.md)`). Docusaurus rewrites
+  those to site routes, and `markdown.hooks.onBrokenMarkdownLinks: 'throw'`
+  fails the build if one stops resolving. Mind the depth: a guide chapter is
+  two levels below `docs/`.
+- *Between guide chapters* — relative too (`](../help/limits.md)`), never the
+  published URL. The relative form is what Docusaurus can check.
+- *From a published doc to an unpublished one* — absolute
+  `https://github.com/sdlctools/cedit/blob/main/…`. There is no site route to
+  point at.
+- *In `README.md`* — absolute, and pointing at the **site** for everything
+  under `docs/`. `tests/test_packaging.py::test_readme_links_are_absolute`
+  enforces the first half; nothing can enforce the second, so a `blob/main/`
+  URL to a moved file 404s quietly.
+
+**Do not cite a doc by line number.** ARCHITECTURE.md used to, and every one
+of those citations broke the moment the guide moved. Name the page.
+
+Same rule for the paths cedit *prints*. A docstring or comment naming a
+document uses the repo-relative path (`docs/SPEC.md`); anything that reaches
+a user's terminal — the guards' stderr warnings, `cedit --help` — uses the
+published URL, because that reader installed cedit and has no checkout.
+
+```bash
+cd website && npm ci && npm run build   # what CI builds; fails on a broken link
+cd website && npm start                 # live reload against ../docs
+```
+
+**Versions are cut by the release, not by hand.** `release.yml` runs
+`docusaurus docs:version <X.Y.Z>` on `main` after the version bump and the
+PyPI build, then calls `docs.yml` to publish — a `GITHUB_TOKEN` push
+triggers no workflow, so the call is what actually deploys it. This matters
+more here than on a typical library: a hash-moving release is a breaking
+change to consumers' on-disk `.cedit/` state, and a reader on an older cedit
+needs the docs that describe the parser their hashes were taken under.
+
+**A release that changes `docs.yml` or `release.yml` cannot finish in CI.**
+That is expected, not a defect — see the failure-mode table in
+[.claude/rules/release-pipeline.md](.claude/rules/release-pipeline.md) and
+finish it by hand from
+[.claude/rules/manual-release.md](.claude/rules/manual-release.md).
+
+**Pages must be enabled once, by a human**: Settings → Pages → Source →
+*GitHub Actions*. Until then `docs.yml` fails at the deploy step.
 
 ## Invariants — do not violate these
 
@@ -106,7 +186,7 @@ first, then `.cedit/` state.
    turns their next sync into a wall of false conflicts against blocks
    nobody touched. Deliberate changes are possible — they go through
    [.claude/rules/hash-stability.md](.claude/rules/hash-stability.md). See
-   also *Reuse rules* in SPEC.md.
+   also *Reuse rules* in docs/SPEC.md.
 
 2. **The parsing stack in `requirements.txt` is pinned exactly on purpose.**
    Every hash in `.cedit/` state — base doc hashes, overlay keys, conflict
@@ -135,7 +215,7 @@ first, then `.cedit/` state.
    with a per-block report **by design**, not as a bug to patch casually. The
    merged document's structure always comes from upstream and the splice is
    the only mutation; that invariant is what makes the vendored machinery
-   reusable. Structural local edits are phase 2 in SPEC.md.
+   reusable. Structural local edits are phase 2 in docs/SPEC.md.
 
 ## Repo workflow
 

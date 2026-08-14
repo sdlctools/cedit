@@ -210,6 +210,29 @@ which PyPI sorts *below* `0.1.6`, and **PyPI filenames are immutable**: the
 version is burned, uncorrectable by re-uploading. Step 3 is the only point
 at which the working tree holds the release version.
 
+### 4b. Cut the docs version
+
+`release.yml` does this immediately after the build, on `main`, and for the
+same ordering reason: it touches only `website/`, which never reaches the
+distribution, so it stays out of the bump→build pair.
+
+```bash
+git checkout main                    # still on main from step 3
+cd website
+npm ci
+npm run docs:version -- "${NEXT_NO_V}"
+cd ..
+git add website/versioned_docs website/versioned_sidebars website/versions.json
+git commit -m "docs: cut docs version ${NEXT_NO_V}"
+git push origin main
+```
+
+Skip it if `website/versioned_docs/version-${NEXT_NO_V}` already exists — the
+automated step guards on exactly that, and a second cut of the same version
+fails. The snapshot is what a reader still on `${NEXT_NO_V}` will be served
+after the *next* release moves the current docs on; cutting it late is
+harmless, forgetting it means that reader silently gets a newer cedit's docs.
+
 ### 5. Back-merge `main` into `development`
 
 The step the automation cannot do. `--no-ff` keeps the sync commit explicit
@@ -248,6 +271,19 @@ last means such a failure leaves everything else already done.
 venv/bin/python3 -m twine upload dist/*
 ```
 
+### 7b. Publish the docs site
+
+In CI this is `release.yml`'s `publish-docs` job. By hand it is one dispatch,
+because everything the build needs is already on `main`:
+
+```bash
+gh workflow run "Docs site" --ref main
+gh run list --workflow "Docs site" --limit 1
+```
+
+If the run fails at *Deploy* with *Get Pages site failed*, Pages was never
+enabled: Settings → Pages → Source → **GitHub Actions**, then dispatch again.
+
 ### 8. Verify
 
 ```bash
@@ -258,6 +294,8 @@ curl -s https://pypi.org/pypi/cedit/json \
 git rev-list --count origin/development..origin/main          # 0 => back-merge done
 git show origin/development:pyproject.toml | grep '^version'  # carries the release version
 gh workflow list --all | grep Release                         # 'active' if you used Mode B
+git show origin/main:website/versions.json                    # newest entry is ${NEXT_NO_V}
+curl -sI "https://sdlctools.github.io/cedit/" | head -1        # site is up
 ```
 
 ## Resuming a partial release
@@ -271,8 +309,10 @@ is independent:
 | `gh release view "$NEXT"` | step 2 |
 | `git show origin/main:pyproject.toml \| grep '^version'` shows `${NEXT_NO_V}` | step 3 |
 | `curl -s https://pypi.org/pypi/cedit/json` lists `${NEXT_NO_V}` | steps 4 + 7 |
+| `git show origin/main:website/versions.json` lists `${NEXT_NO_V}` | step 4b |
 | `git rev-list --count origin/development..origin/main` is `0` | step 5 |
 | `git ls-remote --heads origin \| grep "$HEAD_REF"` is empty | step 6 |
+| the site's version dropdown offers `${NEXT_NO_V}` | step 7b |
 
 **Do not re-run the failed `release.yml` job to catch up.** Its first action
 is to create the tag, which now exists, so it aborts before reaching the
