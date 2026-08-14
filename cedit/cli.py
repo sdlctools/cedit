@@ -20,9 +20,15 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import importlib.metadata
 import os
+import platform
 import sys
+import textwrap
 
+import mdformat.plugins
+
+from . import __version__
 from .blocks import StructureMismatch, canonicalise, parse_doc, splice_block, render_verified
 from .linkguard import warn_link_refs
 from .mathguard import warn_fragile_math
@@ -354,6 +360,83 @@ def _refresh_overlay(state: State, doc: str) -> None:
 
 
 # --------------------------------------------------------------------------
+# Version
+# --------------------------------------------------------------------------
+
+# The pinned parsing stack, in the order `--version` prints it — the same list
+# `requirements.txt` pins exactly. The versions are read from the *environment*
+# at runtime and never from that file: reporting the pin while the user runs
+# something else is precisely the failure this flag exists to diagnose.
+_STACK = (
+    "markdown-it-py",
+    "mdit-py-plugins",
+    "mdformat",
+    "mdformat-gfm",
+    "mdformat-frontmatter",
+    "mdformat-footnote",
+    "linkify-it-py",
+)
+
+_INDENT = " " * len("parsing stack: ")
+
+
+def _dist_version(name: str) -> str:
+    """`name`'s installed version, or a placeholder — never a traceback.
+
+    `importlib.metadata.version` raises `PackageNotFoundError` for anything
+    not installed, and a diagnostic that dies on the broken environment it
+    was meant to describe is worse than useless.
+    """
+    try:
+        return importlib.metadata.version(name)
+    except importlib.metadata.PackageNotFoundError:
+        return "(not installed)"
+
+
+def _version_block() -> str:
+    """What `cedit --version` prints: the build, and what its parser *is*.
+
+    The parsing stack and the plugin set are here rather than in the bare
+    version number because of invariant 2 (AGENTS.md): every hash in a
+    consumer's `.cedit/` state is a function of that stack, and
+    `mdcore.utils.make_parser` does not name its extensions — it appends every
+    one installed in the environment, so an unrelated `pip install` changes
+    what the parser is without touching any pin. The plugin line is the one
+    `.claude/rules/hash-stability.md` tells a maintainer to compare against
+    the baseline's, and it is why this flag is verbose.
+    """
+    stack = ", ".join(f"{name} {_dist_version(name)}" for name in _STACK)
+    plugins = ", ".join(sorted(mdformat.plugins.PARSER_EXTENSIONS)) or "(none)"
+    return "\n".join([
+        f"cedit {__version__}",
+        f"Python {platform.python_version()}",
+        *textwrap.wrap(f"parsing stack: {stack}", width=79,
+                       subsequent_indent=_INDENT, break_on_hyphens=False),
+        f"mdformat plugins: {plugins}",
+    ])
+
+
+class _VersionAction(argparse.Action):
+    """`--version`, resolved when asked rather than on every invocation.
+
+    argparse's own `action="version"` cannot do this job twice over: it takes
+    the text at parser-construction time, so every `cedit sync` would pay for
+    enumerating the installed distributions, and it prints that text through
+    the help formatter, which reflows it — collapsing the block above into one
+    ragged paragraph.
+    """
+
+    def __init__(self, option_strings, dest=argparse.SUPPRESS,
+                 default=argparse.SUPPRESS, help=None):
+        super().__init__(option_strings=option_strings, dest=dest,
+                         default=default, nargs=0, help=help)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        print(_version_block())
+        parser.exit()
+
+
+# --------------------------------------------------------------------------
 # Argument parsing
 # --------------------------------------------------------------------------
 
@@ -361,10 +444,16 @@ def _refresh_overlay(state: State, doc: str) -> None:
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="cedit",
-        description="Keep local adaptations of vendored Markdown alive "
-                    "across upstream updates "
+        # The version leads the description so that `cedit --help` alone
+        # identifies the build. Only this line, though — the stack block
+        # belongs to `--version`, not to every help screen.
+        description=f"cedit {__version__} — keep local adaptations of "
+                    "vendored Markdown alive across upstream updates "
                     "(see https://sdlctools.github.io/cedit/docs/spec).",
     )
+    parser.add_argument("--version", action=_VersionAction,
+                        help="show the version, the parsing stack and the "
+                             "installed mdformat plugins, and exit")
     parser.add_argument("--state-dir", default=None,
                         help="state directory (default: .cedit); ignored by "
                              "the stateless `md` subcommands")
