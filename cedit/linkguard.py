@@ -202,6 +202,7 @@ def warn_link_refs(md: str, label: str, *, stream=None) -> list[LinkRef]:
           "inlined when used,", file=out)
     print("    but unused definitions are silently dropped. Either use the "
           "reference or convert it", file=out)
-    print("    to a direct link. See USERGUIDE.md for details.", file=out)
+    print("    to a direct link. See the user guide for details:", file=out)
+    print("    https://sdlctools.github.io/cedit/docs/userguide", file=out)
 
     return unused

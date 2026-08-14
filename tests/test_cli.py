@@ -1,4 +1,4 @@
-"""End-to-end CLI flows in a throwaway consumer repo — SPEC.md's worked
+"""End-to-end CLI flows in a throwaway consumer repo — docs/SPEC.md's worked
 scenario: vendor a skill, adapt bash→zsh locally, keep syncing upstream.
 """
 

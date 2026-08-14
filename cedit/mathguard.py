@@ -54,7 +54,7 @@ holding `\\|`, whose inline content is already unescaped, is the reachable
 one). Those spans — and no others — are reported on **stderr, leaving the
 exit code alone** (AGENTS.md invariant 4), because they are the only ones
 still exposed to the old rewrite. A clean document says nothing at all now.
-USERGUIDE.md §13 is the user-facing version of this paragraph.
+docs/USERGUIDE.md §13 is the user-facing version of this paragraph.
 """
 
 from __future__ import annotations
@@ -407,5 +407,7 @@ def warn_fragile_math(md: str, label: str, *, stream=None) -> list[MathSpan]:
           "maths changes.\n"
           "    Use a ```math fence for display math, and the Unicode character "
           "or a code span\n"
-          "    inline (USERGUIDE.md §13).", file=out)
+          "    inline — user guide §13:\n"
+          "    https://sdlctools.github.io/cedit/docs/userguide"
+          "#13-limits-stated-plainly", file=out)
     return spans

@@ -15,16 +15,22 @@ the same thing you did.
 
 ## Documentation
 
+The user-facing docs are published at
+**[sdlctools.github.io/cedit](https://sdlctools.github.io/cedit/)**, versioned
+alongside releases — a reader on an older cedit gets the docs that match it.
+The rest live in the repository, where the tooling that reads them expects
+them.
+
 | Document | What's in it |
 | --- | --- |
-| [USERGUIDE.md](https://github.com/sdlctools/cedit/blob/main/USERGUIDE.md) | **How to drive it** — a five-minute tour, a per-flag reference for all five subcommands and for the `md` parser views, the conflict lifecycle worked end to end, the `.cedit/` layout, a cookbook and a troubleshooting table |
-| [SPEC.md](https://github.com/sdlctools/cedit/blob/main/SPEC.md) | **The design** — the merge matrix, the normative sync algorithm, the state format, the reuse rules, and what is phase 1 vs. phase 2 vs. never |
+| [USERGUIDE.md](https://sdlctools.github.io/cedit/docs/userguide) | **How to drive it** — a five-minute tour, a per-flag reference for all five subcommands and for the `md` parser views, the conflict lifecycle worked end to end, the `.cedit/` layout, a cookbook and a troubleshooting table |
+| [SPEC.md](https://sdlctools.github.io/cedit/docs/spec) | **The design** — the merge matrix, the normative sync algorithm, the state format, the reuse rules, and what is phase 1 vs. phase 2 vs. never |
 | [AGENTS.md](https://github.com/sdlctools/cedit/blob/main/AGENTS.md) | **Changing cedit itself** — build and test commands, the architecture in one table, and the five invariants a change must not violate. `CLAUDE.md` exists only to pull this in, so every AI assistant reads the same file |
-| [ARCHITECTURE.md](https://github.com/sdlctools/cedit/blob/main/ARCHITECTURE.md) | **The code, and how to change it** — every function, dataclass field and constant, the end-to-end call graph from `cli.main` down to the splice, where each invariant is actually enforced, and a *Changing cedit* section: which changes move consumers' stored hashes, and what to touch to add a subcommand, a block kind or a state field |
+| [ARCHITECTURE.md](https://sdlctools.github.io/cedit/docs/architecture) | **The code, and how to change it** — every function, dataclass field and constant, the end-to-end call graph from `cli.main` down to the splice, where each invariant is actually enforced, and a *Changing cedit* section: which changes move consumers' stored hashes, and what to touch to add a subcommand, a block kind or a state field |
 | [.claude/rules/release-pipeline.md](https://github.com/sdlctools/cedit/blob/main/.claude/rules/release-pipeline.md) | **How this repo ships** — the two tag shapes, the dev-build / cut / release flow end to end, who owns the version at each step, the five workflow invariants, and a failure-mode table |
-| [cedit-canonicalization-reference.md](https://github.com/sdlctools/cedit/blob/main/cedit-canonicalization-reference.md) | **Canonicalization reference** — every Markdown element and how `cedit md canonicalize` transforms it, known caveats, and quick test commands |
+| [cedit-canonicalization-reference.md](https://sdlctools.github.io/cedit/docs/canonicalization-reference) | **Canonicalization reference** — every Markdown element and how `cedit md canonicalize` transforms it, known caveats, and quick test commands |
 
-Using cedit? You want USERGUIDE.md. The last three are for working *on* it.
+Using cedit? You want the user guide. The last three are for working *on* it.
 
 The pinned parser and the Merkle-hash diff engine live — frozen — in
 [`cedit/mdcore/`](https://github.com/sdlctools/cedit/tree/main/cedit/mdcore/).
@@ -111,7 +117,7 @@ explicit, never a silent clobber.
 
 Everything above in depth — every flag, every output line, the conflict
 lifecycle end to end, the `.cedit/` layout and a troubleshooting table — is
-in [USERGUIDE.md](https://github.com/sdlctools/cedit/blob/main/USERGUIDE.md).
+in [USERGUIDE.md](https://sdlctools.github.io/cedit/docs/userguide).
 
 ## Looking at the parser directly
 
@@ -141,7 +147,7 @@ resolve` speak.
   paths) or a file; git submodules, subtrees or curl are your transport.
 - **Link reference definitions are inlined when used, and unused ones are
   dropped with a warning on stderr.** See
-  [USERGUIDE.md §13](https://github.com/sdlctools/cedit/blob/main/USERGUIDE.md#13-limits-stated-plainly).
+  [USERGUIDE.md §13](https://sdlctools.github.io/cedit/docs/userguide#13-limits-stated-plainly).
 
 ## Layout
 
@@ -159,8 +165,11 @@ resolve` speak.
 | `cedit/store.py` | atomic writes: temp file + `rename(2)`, so a crash never leaves half-written state |
 | `cedit/mdcore/` | **frozen**: the pinned parser + tree_diff — every recorded hash is a function of these |
 | `tests/` | merge matrix + end-to-end CLI lifecycle + packaging metadata + the parser drift check |
+| `docs/` | the four published documents: the user guide, the spec, the architecture map and the canonicalization reference |
+| `website/` | the Docusaurus site that publishes `docs/` — self-contained, and excluded from the sdist and the wheel |
 | `pyproject.toml` | packaging metadata: the exact runtime pins, the `cedit` console script, explicit package discovery |
 | `.github/workflows/tests.yml` | the suite on 3.10 – 3.14, installed from `requirements.txt` |
+| `.github/workflows/docs.yml` | builds `website/` and deploys it to GitHub Pages, path-filtered to `docs/**` and `website/**` |
 
 ## Status
 
@@ -169,7 +178,7 @@ re-applies *replacements* — prose, fences, table cells, front matter — and
 **rejects local structural changes** (inserting, deleting or moving whole
 blocks) with a per-block report rather than guessing. Structural local edits
 are phase 2 in
-[SPEC.md](https://github.com/sdlctools/cedit/blob/main/SPEC.md). The CLI
+[SPEC.md](https://sdlctools.github.io/cedit/docs/spec). The CLI
 surface, the exit codes and the `.cedit/` state format are what phase 2 will
 build on, but nothing here is promised stable before 1.0 — pin the version if
 that matters to you.

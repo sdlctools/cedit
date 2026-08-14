@@ -1,7 +1,7 @@
 """cedit — continuous editing of vendored Markdown.
 
 A persistent block-level overlay of local adaptations, re-applied by 3-way
-structural merge on every upstream update. See SPEC.md.
+structural merge on every upstream update. See docs/SPEC.md.
 """
 
 from importlib.metadata import PackageNotFoundError, version as _version

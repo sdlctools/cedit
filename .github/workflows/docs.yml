@@ -1,0 +1,106 @@
+# Builds website/ and deploys it to GitHub Pages.
+#
+# Path-filtered on purpose: the docs site has nothing to say about a change
+# to cedit/ or tests/, and a site build on every source push is a minute of
+# CI spent to publish the identical bytes. The filter is docs/**, website/**
+# and this file — the three inputs the built site is a function of.
+#
+# Three triggers, and each exists for a different reason:
+#
+#   push (main, filtered) — the ordinary path. A merged PR that touched the
+#     docs republishes them.
+#   workflow_dispatch     — the manual escape hatch, for a Pages
+#     misconfiguration fixed on github.com rather than in this repo.
+#   workflow_call         — release.yml calls this after it cuts a docs
+#     version, and MUST: that step's commit is pushed by GITHUB_TOKEN, and a
+#     GITHUB_TOKEN push triggers no workflows (invariant 2 in
+#     .claude/rules/release-pipeline.md). Without the call, a release's docs
+#     version would sit unpublished until the next unrelated docs push.
+#
+# PRECONDITION, not fixable from this repository: Settings -> Pages -> Build
+# and deployment -> Source must be set to "GitHub Actions". Until a human
+# does that, actions/deploy-pages fails with "Get Pages site failed" and no
+# amount of YAML here changes it.
+name: Docs site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'website/**'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: >-
+          Git ref to build the site from. release.yml passes 'main' so the
+          deploy carries the docs version it has just cut and pushed; the
+          default builds whatever ref triggered the run.
+        type: string
+        required: false
+        default: ''
+
+# Serialize deploys without cancelling one in flight: a half-deployed Pages
+# site is worse than a slightly stale one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    name: Build the Docusaurus site
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          # docs.showLastUpdateTime reads the git history of each file. A
+          # shallow clone silently degrades that to "cannot infer the update
+          # date" warnings and no timestamps on the page.
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - name: Install dependencies
+        working-directory: website
+        run: npm ci
+
+      - name: Build
+        working-directory: website
+        # onBrokenLinks and markdown.hooks.onBrokenMarkdownLinks are both
+        # 'throw' in docusaurus.config.js, so a cross-link that stopped
+        # resolving fails here rather than shipping as a 404.
+        run: npm run build
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload the site as a Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: website/build
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v5

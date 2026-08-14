@@ -147,3 +147,51 @@ def test_readme_links_are_absolute():
         "README.md is the PyPI long description; these targets are relative "
         f"and will 404 on pypi.org: {relative}"
     )
+
+
+def test_the_docs_site_stays_out_of_the_distribution():
+    """`docs/` and `website/` are published, not shipped.
+
+    CED-32 confirmed by building that neither appears in the sdist or the
+    wheel. This test guards the *reasons* that held, because with setuptools
+    there are exactly four ways either could get in and all four are visible
+    here without running a build:
+
+    * `[tool.setuptools] packages` — explicit, and every entry is a `cedit`
+      package. Auto-discovery is what would sweep up a sibling directory.
+    * a `MANIFEST.in` — `graft`/`include` directives are honoured by the
+      sdist regardless of the package list. There is none.
+    * `package-data` / `data-files` — the other route into the wheel.
+    * `readme` — README.md is the one Markdown file that legitimately ships,
+      as the PyPI long description.
+
+    The point is not size. `website/node_modules` aside, a wheel that carries
+    documentation invites it to be read from the install path, where it is
+    whatever version the reader happened to install and cannot be corrected.
+    The site is the correctable copy.
+    """
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text("utf-8"))
+    setuptools_cfg = pyproject.get("tool", {}).get("setuptools", {})
+
+    packages = setuptools_cfg.get("packages")
+    assert isinstance(packages, list) and packages, (
+        "[tool.setuptools] packages must stay an explicit list — under "
+        "auto-discovery a flat-layout sibling like docs/ or website/ can be "
+        "picked up as a package"
+    )
+    assert all(p == "cedit" or p.startswith("cedit.") for p in packages), packages
+
+    assert not (ROOT / "MANIFEST.in").exists(), (
+        "a MANIFEST.in can graft docs/ or website/ into the sdist "
+        "independently of the package list — if one is added, assert its "
+        "contents here"
+    )
+
+    for key in ("package-data", "data-files", "package_data", "data_files"):
+        assert key not in setuptools_cfg, (
+            f"[tool.setuptools] {key} is a route into the wheel that this "
+            "test does not inspect — check it does not carry docs/ or "
+            "website/, then teach this test about it"
+        )
+
+    assert pyproject["project"]["readme"] == "README.md"

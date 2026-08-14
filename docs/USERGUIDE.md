@@ -1,15 +1,22 @@
+---
+id: userguide
+slug: /userguide
+sidebar_label: User guide
+sidebar_position: 1
+---
+
 # `cedit` user guide
 
 A practical guide to `cedit/cli.py`, the command line that keeps your local
 adaptations of vendored Markdown alive across upstream updates. This is the
 *how-to*: worked examples, real output, and the flows you will actually run.
 For the *why* behind the design, read [SPEC.md](SPEC.md); for a two-minute
-overview, [README.md](README.md).
+overview, [README.md](https://github.com/sdlctools/cedit/blob/main/README.md).
 
 Every command and every block of output below was run for real — against this
 repository or a throwaway directory — and pasted unedited.
 
-![cedit compares document ASTs and tracks the changes between them](assets/ast-trees-comparison-and-changes-tracking.png)
+![cedit compares document ASTs and tracks the changes between them](../assets/ast-trees-comparison-and-changes-tracking.png)
 
 **Contents**
 
@@ -1703,7 +1710,8 @@ docs/TABLES.md: warning: 1 dollar-delimited math span(s) could not be located in
     cannot for these — canonicalisation will escape the backslash ($\x -> $\\x),
     which GitHub reads inside math as a line break, so the rendered maths changes.
     Use a ```math fence for display math, and the Unicode character or a code span
-    inline (USERGUIDE.md §13).
+    inline — user guide §13:
+    https://sdlctools.github.io/cedit/docs/userguide#13-limits-stated-plainly
 docs/TABLES.md: 1 edit(s) reapplied, 2 block(s) updated from upstream
 rc=0
 ```
@@ -1733,12 +1741,12 @@ the same as understanding it, and nothing keys on the contents of a span. Every
 published `mdformat-dollarmath` requires `mdformat<0.8` against the pinned
 `mdformat==1.0.0`, and `mdformat-myst` would add a second frontmatter plugin —
 a parser-identity change in its own right (see
-[.claude/rules/hash-stability.md](.claude/rules/hash-stability.md)).
+[.claude/rules/hash-stability.md](https://github.com/sdlctools/cedit/blob/main/.claude/rules/hash-stability.md)).
 
 **If you tracked a document with `$...$` math before cedit 0.4.0**, its
 `.cedit/base/` snapshot holds the rewritten form, and this release moves it.
 Re-baseline that document — the recipe is *Re-baselining a document* in
-[.claude/rules/hash-stability.md](.claude/rules/hash-stability.md); your
+[.claude/rules/hash-stability.md](https://github.com/sdlctools/cedit/blob/main/.claude/rules/hash-stability.md); your
 adaptations live in the working copy, so none of them are lost. Documents with
 no such math are unaffected: their hashes and canonical bytes do not move.
 
@@ -1771,7 +1779,8 @@ docs/LINKS.md: warning: 1 link reference definition(s) would be lost during cano
     line 1: [unused]: https://example.com/never-used
     Link reference definitions (e.g., '[label]: https://...') are inlined when used,
     but unused definitions are silently dropped. Either use the reference or convert it
-    to a direct link. See USERGUIDE.md for details.
+    to a direct link. See the user guide for details:
+    https://sdlctools.github.io/cedit/docs/userguide
 ```
 
 The warning is stderr-only and does not affect the exit code. To make CI fail on
@@ -1834,7 +1843,7 @@ Two consequences worth knowing:
   that on every document rather than assuming it. A `.cedit/base/` snapshot
   written before this release still matches block for block; the recovered text
   reappears in the base on the next `sync`. This is not the re-baselining case
-  described in [.claude/rules/hash-stability.md](.claude/rules/hash-stability.md).
+  described in [.claude/rules/hash-stability.md](https://github.com/sdlctools/cedit/blob/main/.claude/rules/hash-stability.md).
 - **The recovered text is not part of any block**, because no cell contains it.
   It rides with its row, so a `sync` keeps whatever the incoming upstream
   revision's row carries, and an edit you make to that text alone is not merged.
@@ -1857,7 +1866,8 @@ docs/TABLES.md: warning: 1 table row(s) carry text past the header's last column
     whatever a body row carries past it — an annotation after the closing pipe, or an
     extra cell. cedit normally lifts that text out and puts it back verbatim, and
     cannot for these. Give the table another column, or move the note into a cell
-    (USERGUIDE.md §13).
+    — user guide §13:
+    https://sdlctools.github.io/cedit/docs/userguide#13-limits-stated-plainly
 docs/TABLES.md: 1 edit(s) reapplied, 2 block(s) updated from upstream
 rc=0
 ```
@@ -2013,7 +2023,7 @@ ______________________________________________________________________
 | `status` reports `STRUCTURAL DRIFT` but exits 0 | only conflicts drive exit 1 | gate on `diff` (exits 2) if you need drift to fail CI |
 | `warning: N dollar-delimited math span(s) could not be located in the source` | a `$...$` span in a table cell that also holds `\|` — the parser hands the cell back unescaped, so cedit cannot protect it and the backslash gets escaped | rewrite that span: a ```` ```math ```` fence, `→`, or a code span. See [§13](#13-limits-stated-plainly). The exit code is unaffected; `md canonicalize --check` is the CI gate |
 | your rendered maths grew stray line breaks after a sync | the above, unnoticed — the warning goes to **stderr**, which a `>` redirect does not capture. Every other `$...$` span is preserved byte for byte | `cedit md canonicalize --check <doc>`; then fix the spans and re-run |
-| a sync you expected to be clean is a wall of conflicts, and the documents contain `$...$` math | cedit 0.4.0 preserves that math; before it, `.cedit/base/` recorded the rewritten form, so the base moved under you | re-baseline those documents — *Re-baselining a document* in [.claude/rules/hash-stability.md](.claude/rules/hash-stability.md). Only math-bearing documents are affected |
+| a sync you expected to be clean is a wall of conflicts, and the documents contain `$...$` math | cedit 0.4.0 preserves that math; before it, `.cedit/base/` recorded the rewritten form, so the base moved under you | re-baseline those documents — *Re-baselining a document* in [.claude/rules/hash-stability.md](https://github.com/sdlctools/cedit/blob/main/.claude/rules/hash-stability.md). Only math-bearing documents are affected |
 
 **Conflicts on blocks nobody touched.** That is what a moved hash looks like
 from the outside, and two commands settle it without guessing. `.cedit/base/`
@@ -2178,8 +2188,8 @@ so diffs stay local and reviewable.
 
 | Document | What it covers |
 | --- | --- |
-| [README.md](README.md) | the two-minute version: setup, quickstart, layout |
+| [README.md](https://github.com/sdlctools/cedit/blob/main/README.md) | the two-minute version: setup, quickstart, layout |
 | [SPEC.md](SPEC.md) | the normative design — merge matrix, sync algorithm, state format, reuse rules, phases |
-| [AGENTS.md](AGENTS.md) | working on cedit itself: orientation, invariants, repo workflow |
+| [AGENTS.md](https://github.com/sdlctools/cedit/blob/main/AGENTS.md) | working on cedit itself: orientation, invariants, repo workflow |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | the implementation module by module, and the recipes for extending it |
 | [cedit-canonicalization-reference.md](cedit-canonicalization-reference.md) | every Markdown element and how `cedit md canonicalize` transforms it, known caveats, and quick test commands |

@@ -55,7 +55,7 @@ dependencies = [
 [project.urls]
 Homepage = "https://github.com/sdlctools/cedit"
 Repository = "https://github.com/sdlctools/cedit"
-Documentation = "https://github.com/sdlctools/cedit/blob/main/USERGUIDE.md"
+Documentation = "https://sdlctools.github.io/cedit/"
 Issues = "https://github.com/sdlctools/cedit/issues"
 
 [project.scripts]

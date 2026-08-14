@@ -1,3 +1,10 @@
+---
+id: spec
+slug: /spec
+sidebar_label: Spec
+sidebar_position: 2
+---
+
 # cedit — continuous editing of vendored Markdown
 
 Keep **local adaptations** of a vendored Markdown document alive across
@@ -257,7 +264,7 @@ similarity) — and `requirements.txt` pins the stack they are assembled from.
 They are frozen: not because they are sacred, but because a consumer's
 `.cedit/` state is keyed to them, and a change nobody classified re-keys it
 silently. Deliberate changes go through
-[.claude/rules/hash-stability.md](.claude/rules/hash-stability.md) — how to
+[.claude/rules/hash-stability.md](https://github.com/sdlctools/cedit/blob/main/.claude/rules/hash-stability.md) — how to
 tell a hash-moving change from a hash-neutral one, the drift check that
 decides it, and what consumers do when hashes moved. The invariants:
 
@@ -316,7 +323,8 @@ decides it, and what consumers do when hashes moved. The invariants:
   unchanged and every hash would be taken over the rewritten text. So cedit
   **preserves** the span instead, by holding it out of the round-trip behind
   a sentinel and restoring it afterwards (`cedit/mathguard.py`;
-  USERGUIDE.md §13). Nothing keys on what is inside a span, and nothing
+  [user guide §13](USERGUIDE.md#13-limits-stated-plainly)). Nothing keys on
+  what is inside a span, and nothing
   renders it: it is carried, not understood. The handful of spans that
   cannot be located in the source to be held out — a table cell holding
   `\|` — are **warned about on stderr**, exit code untouched, which is the
@@ -329,7 +337,8 @@ decides it, and what consumers do when hashes moved. The invariants:
   parser-identity change as the math case, and GitHub truncates those rows
   too. Again, not reading it is not a licence to lose it: cedit lifts the
   text out of the source before the parse and appends it back onto its own
-  row after the render (`cedit/rowguard.py`; USERGUIDE.md §13), so the bytes
+  row after the render (`cedit/rowguard.py`;
+  [user guide §13](USERGUIDE.md#13-limits-stated-plainly)), so the bytes
   survive even though nothing keys on them. It is carried, not understood —
   and because it belongs to no block, it is not merged either: the merged
   document keeps the row upstream sent.

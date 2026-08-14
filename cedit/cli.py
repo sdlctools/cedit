@@ -1,4 +1,4 @@
-"""cedit — continuous editing of vendored Markdown (SPEC.md).
+"""cedit — continuous editing of vendored Markdown (docs/SPEC.md).
 
     cedit snapshot <doc> --from <upstream-file>
     cedit diff [<doc>...] [--unified]
@@ -221,7 +221,7 @@ def cmd_sync(args) -> int:
         if args.dry_run:
             continue
 
-        # Write ordering (SPEC.md): the working file BEFORE base/manifest.
+        # Write ordering (docs/SPEC.md): the working file BEFORE base/manifest.
         # A crash between the two leaves a merged working copy against the
         # old base — the next sync just re-derives it as local edits and
         # converges. The reverse order would record a sync that never
@@ -362,7 +362,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="cedit",
         description="Keep local adaptations of vendored Markdown alive "
-                    "across upstream updates (see SPEC.md).",
+                    "across upstream updates "
+                    "(see https://sdlctools.github.io/cedit/docs/spec).",
     )
     parser.add_argument("--state-dir", default=None,
                         help="state directory (default: .cedit); ignored by "
