@@ -12,7 +12,7 @@
 #   6. back-merge main -> development  (§3 Phase 4 step 6 / §4 Step 4)
 #   7. delete the release/hotfix branch (§3 Phase 4 step 7)
 #   8. upload the built sdist + wheel to PyPI
-#   9. (separate job) call docs.yml to publish the site from main
+#   9. (separate job) dispatch docs.yml against main to publish the site
 #
 # Only fires for release/* and hotfix/* head branches — a feature PR merged
 # straight into main does NOT trigger a release (the `if:` guard below).
@@ -411,35 +411,40 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   # The docs version cut above is pushed by GITHUB_TOKEN, and a GITHUB_TOKEN
-  # push triggers no workflows (invariant 2 in
-  # .claude/rules/release-pipeline.md) — docs.yml's `push` trigger will not
-  # see it. Calling docs.yml as a reusable workflow from inside this run is
-  # what actually publishes the release's docs, and it is why docs.yml
-  # declares `workflow_call` at all. It builds `main`, which by now carries
-  # both the version bump and the new versioned_docs snapshot.
+  # push emits no workflow runs (invariant 2), so docs.yml's `push` trigger
+  # never sees that commit. This job is what tells it.
   #
-  # `needs: release` and no `if:`, so this runs only when the release job
-  # SUCCEEDED — including its last step, *Publish to PyPI*, whose OIDC
-  # exchange is the one realistic failure in this job (invariant 6 in
-  # .claude/rules/release-pipeline.md). A release that gets everything else
-  # done and then fails that upload therefore leaves a docs version cut and
-  # pushed to main that the site has not published, with no failed docs run
-  # to notice.
+  # It DISPATCHES rather than calling docs.yml as a reusable workflow, and
+  # that is the whole design — see invariant 7 in
+  # .claude/rules/release-pipeline.md. A called workflow runs in the caller's
+  # context, so the deploy would inherit `refs/pull/<n>/merge` from this
+  # workflow's pull_request trigger, and the `github-pages` environment
+  # refuses every ref but `main`: the build succeeds and the deploy is
+  # rejected. A dispatch instead creates its own run at `refs/heads/main`.
+  # `workflow_dispatch` is also the documented exception to invariant 2 —
+  # GITHUB_TOKEN cannot trigger by pushing, but it can always trigger by
+  # dispatching.
   #
-  # That is accepted rather than worked around: `if:` cannot express "failed,
-  # but only after the docs were ready", and the alternatives are worse —
-  # `always()` would publish from a release that died before the docs cut,
-  # and continue-on-error on the upload would hide the failure it is there to
-  # surface. The recovery is operational and already in
-  # release-pipeline.md's failure table: re-run "Docs site" via
-  # workflow_dispatch, since main by then carries everything the build needs.
+  # `!cancelled()` rather than the default `success()`: the release's last
+  # step is the PyPI upload, whose realistic failure is an OIDC exchange a
+  # human fixes on pypi.org, and by then the docs version has been cut and
+  # pushed several steps ago. Gating on success would leave the site a
+  # version behind for exactly that case, with no failed docs run to notice.
+  # The `!= 'skipped'` half keeps an ordinary non-release PR merged into main
+  # from republishing the site for nothing — that is when the release job's
+  # own `if:` guard declines to run.
   publish-docs:
     name: Publish the docs site
     needs: release
+    if: ${{ !cancelled() && needs.release.result != 'skipped' }}
+    runs-on: ubuntu-latest
     permissions:
-      contents: read
-      pages: write
-      id-token: write
-    uses: ./.github/workflows/docs.yml
-    with:
-      ref: main
+      actions: write        # dispatching a workflow is an Actions write
+    steps:
+      - name: Dispatch the docs build against main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh workflow run "Docs site" --ref main --repo "${{ github.repository }}"
+          echo "::notice::Dispatched 'Docs site' on main."

@@ -73,8 +73,10 @@ human marks the draft PR ready and merges it into main
                         back-merge main -> development (PR on conflict)
                         delete release/sprint-X.Y.Z
                         upload dist/ to PyPI (Trusted Publishing, OIDC)
-                     ──► publish-docs job: calls docs.yml with ref=main
-                        (a GITHUB_TOKEN push fires nothing — invariant 2)
+                     ──► publish-docs job: gh workflow run "Docs site" --ref main
+                        (a GITHUB_TOKEN push fires nothing, but a dispatch
+                         always does — invariant 2; and only a main-ref run
+                         may deploy to Pages — invariant 7)
 ```
 
 A `hotfix/*` PR merged into `main` enters the same `release.yml` at the
@@ -208,23 +210,62 @@ is the guard — so it has nothing to contribute to `dist/` and every reason to
 stay out of the bump→build pair. Moving it between them buys nothing and
 re-opens this invariant.
 
-### 7. The docs site is published by a *call*, not by the push
+### 7. The docs site is published by a *dispatch* against `main` — never by a call from inside the release
 
-`release.yml`'s `publish-docs` job calls `docs.yml` as a reusable workflow
-(`uses: ./.github/workflows/docs.yml`, `with: ref: main`). That is not
-stylistic: the docs-version commit is pushed by `GITHUB_TOKEN`, and by
-invariant 2 such a push emits no workflow runs, so `docs.yml`'s own `push`
-trigger never fires for it. Replace the call with a "docs.yml will pick it
-up" assumption and the release's docs sit unpublished until the next
-unrelated docs push — silently, with no failed run to notice.
+Two facts force this, and each one on its own rules out an obvious design:
 
-Two consequences worth keeping straight:
+- The docs-version commit is pushed by `GITHUB_TOKEN`, so by invariant 2 it
+  emits no workflow runs and `docs.yml`'s `push` trigger never fires for it.
+  *Something* other than that push has to publish.
+- The `github-pages` environment carries a deployment branch policy naming
+  exactly one ref: the branch `main`. A run on any other ref is refused at
+  the environment gate — **after** a green build, which is what makes it look
+  like a Pages misconfiguration rather than a workflow bug.
 
-- `docs.yml` must keep its `workflow_call` trigger and its `ref` input.
-  Removing either breaks the release, not just the docs.
-- The caller declares the Pages permissions (`pages: write`,
-  `id-token: write`) at the *job* level. A reusable workflow does not inherit
-  the caller's workflow-level block.
+`release.yml`'s `publish-docs` job therefore does exactly this:
+
+```yaml
+- run: gh workflow run "Docs site" --ref main --repo "${{ github.repository }}"
+  env:
+    GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+The dispatch creates its **own** run at `refs/heads/main`, which is the ref
+the environment allows. And `workflow_dispatch` is the documented exception
+to invariant 2: `GITHUB_TOKEN` cannot trigger a workflow by pushing, but
+`workflow_dispatch` and `repository_dispatch` "always create workflow runs".
+The job needs `actions: write` for it, at the job level.
+
+**Do not reinstate the reusable-workflow call.** `release.yml` used to carry
+a `publish-docs` job with `uses: ./.github/workflows/docs.yml` and
+`with: ref: main`. It cannot work: a called workflow runs in the **caller's**
+context, so `github.ref` stayed `refs/pull/<n>/merge` from `release.yml`'s
+`pull_request` trigger, and v0.3.5's deploy was refused with
+
+```
+Branch "refs/pull/58/merge" is not allowed to deploy to github-pages
+due to environment protection rules.
+```
+
+The `ref: main` input did not help and could not: it only told
+`actions/checkout` what to fetch. The environment gate reads the *run's* ref,
+which no input can change.
+
+Consequences worth keeping straight:
+
+- `docs.yml` needs no `workflow_call` trigger and no `ref` input; both were
+  removed with the job. `workflow_dispatch` is now load-bearing rather than a
+  convenience — deleting it breaks every release.
+- The Pages permissions live in `docs.yml`'s own workflow-level
+  `permissions:` block. There is no caller to declare them any more.
+- The dispatch is fire-and-forget: `release.yml` does not wait for the docs
+  run, so a red `Docs site` never shows up as a red `Release`. Check the
+  `Docs site` run, not just the release, when a version's docs matter.
+- `--ref main` dispatches the copy of `docs.yml` **on `main`**, not the one in
+  the release. A change to `docs.yml` takes effect for the release *after*
+  the one that merges it.
+- If the deployment branch policy is ever widened or renamed, re-read this
+  invariant before relying on it — it is the load-bearing half.
 
 ## Failure modes and what they mean
 
@@ -240,9 +281,10 @@ Two consequences worth keeping straight:
 | No `vX.Y.Z-dev.1` after a release | invariant 2, not a bug | it appears on the next push to `development` |
 | `Release` fails at *Publish to PyPI*, everything else done | no pending publisher on pypi.org for this repo + workflow, or the OIDC exchange was refused | configure the Trusted Publisher, then upload `dist/` by hand from a checkout of `main` (which carries the bumped version) — do **not** re-run the job, the tag step would fail |
 | `Release` fails at *Build sdist + wheel and verify* | the built version does not match the tag — the build ran against a tree that was not bumped (invariant 6) | fix the step order; nothing was uploaded, so the version is not burned |
-| `Docs site` (or `publish-docs`) fails at *Deploy*: *Get Pages site failed* | GitHub Pages was never enabled for the repository | Settings → Pages → Source → **GitHub Actions**, then re-run the workflow. No change in this repo can substitute |
+| `Docs site` fails at *Deploy*: *Get Pages site failed* | GitHub Pages was never enabled for the repository | Settings → Pages → Source → **GitHub Actions**, then re-run the workflow. No change in this repo can substitute |
+| `Docs site` fails at *Deploy*: *Branch `refs/pull/<n>/merge` is not allowed to deploy to github-pages* | the run's ref is not `main`, which the environment's deployment branch policy requires — in practice, something invoked `docs.yml` from inside a `pull_request`-triggered run (invariant 7) | do not widen the environment policy; publish by dispatching `--ref main` instead. `gh workflow run "Docs site" --ref main` recovers the missed deploy |
 | `Release` fails at *Cut a docs version*: *Version X.Y.Z already exists* | the step ran once before, or the version was cut by hand on the release branch | the step already guards on `website/versioned_docs/version-X.Y.Z` and skips; if it still fires, remove the stray directory or accept the existing snapshot |
-| Release completed, site still shows the previous version | `publish-docs` did not run, or the deploy failed after the release job succeeded | re-run `Docs site` via `workflow_dispatch` — everything it needs is already on `main` |
+| Release completed, site still shows the previous version | `publish-docs` did not dispatch, or the `Docs site` run it started failed — and it fails independently of the release, which stays green (invariant 7) | read the `Docs site` run; then re-dispatch: `gh workflow run "Docs site" --ref main` — everything it needs is already on `main` |
 | A source-only push to `main` built the site | the path filter in `docs.yml` was widened, or a touched file matched `website/**` | the filter is `docs/**`, `website/**` and `docs.yml` itself; narrow it back rather than accepting the noise |
 
 ### Recovering a release that never fired
