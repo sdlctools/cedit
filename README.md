@@ -23,7 +23,7 @@ them.
 
 | Document | What's in it |
 | --- | --- |
-| [USERGUIDE.md](https://sdlctools.github.io/cedit/docs/userguide) | **How to drive it** — a five-minute tour, a per-flag reference for all five subcommands and for the `md` parser views, the conflict lifecycle worked end to end, the `.cedit/` layout, a cookbook and a troubleshooting table |
+| [User guide](https://sdlctools.github.io/cedit/docs/userguide) | **How to drive it** — a five-minute tour, a per-flag reference for all five subcommands and for the `md` parser views, the conflict lifecycle worked end to end, the `.cedit/` layout, a cookbook and a troubleshooting table |
 | [SPEC.md](https://sdlctools.github.io/cedit/docs/spec) | **The design** — the merge matrix, the normative sync algorithm, the state format, the reuse rules, and what is phase 1 vs. phase 2 vs. never |
 | [AGENTS.md](https://github.com/sdlctools/cedit/blob/main/AGENTS.md) | **Changing cedit itself** — build and test commands, the architecture in one table, and the five invariants a change must not violate. `CLAUDE.md` exists only to pull this in, so every AI assistant reads the same file |
 | [ARCHITECTURE.md](https://sdlctools.github.io/cedit/docs/architecture) | **The code, and how to change it** — every function, dataclass field and constant, the end-to-end call graph from `cli.main` down to the splice, where each invariant is actually enforced, and a *Changing cedit* section: which changes move consumers' stored hashes, and what to touch to add a subcommand, a block kind or a state field |
@@ -117,7 +117,7 @@ explicit, never a silent clobber.
 
 Everything above in depth — every flag, every output line, the conflict
 lifecycle end to end, the `.cedit/` layout and a troubleshooting table — is
-in [USERGUIDE.md](https://sdlctools.github.io/cedit/docs/userguide).
+in the [user guide](https://sdlctools.github.io/cedit/docs/userguide).
 
 ## Looking at the parser directly
 
@@ -147,7 +147,7 @@ resolve` speak.
   paths) or a file; git submodules, subtrees or curl are your transport.
 - **Link reference definitions are inlined when used, and unused ones are
   dropped with a warning on stderr.** See
-  [USERGUIDE.md §13](https://sdlctools.github.io/cedit/docs/userguide#13-limits-stated-plainly).
+  [the user guide, *Limits, stated plainly*](https://sdlctools.github.io/cedit/docs/userguide/limits).
 
 ## Layout
 

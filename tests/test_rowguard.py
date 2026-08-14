@@ -277,8 +277,7 @@ def test_an_unliftable_row_is_reported(capsys, bad_cut):
     # The pointer a real user follows out of this warning. It is a published
     # URL rather than a repo path because the reader is running an installed
     # cedit and has no checkout — CED-32 moved the guide onto the docs site.
-    assert ("https://sdlctools.github.io/cedit/docs/userguide"
-            "#13-limits-stated-plainly") in captured.err
+    assert "https://sdlctools.github.io/cedit/docs/userguide/limits" in captured.err
 
 
 @pytest.mark.parametrize("md", OVERFLOWING + STABLE + [JIRA_REST])

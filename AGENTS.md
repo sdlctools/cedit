@@ -5,7 +5,7 @@ Read this before touching the codebase. It is the single entrypoint for
 this file in, so add project instructions here and nowhere else.
 
 Depth lives elsewhere: [README.md](README.md) is the user-facing usage
-(setup, quickstart, exit codes, layout), [USERGUIDE.md](docs/USERGUIDE.md) is the
+(setup, quickstart, exit codes, layout), [the user guide](docs/userguide/) is the
 task-oriented how-to (command reference, flows, conflict lifecycle,
 troubleshooting), [SPEC.md](docs/SPEC.md) is the normative design (merge matrix,
 sync algorithm, state format, reuse rules, phases), and
@@ -60,7 +60,7 @@ install.
 
 Use `venv/bin/python3`, not a bare `python3` — the interpreter needs the
 pinned parsing stack, so a bare `python3 -m cedit` fails on
-`ModuleNotFoundError`. README.md and docs/USERGUIDE.md write plain `cedit`
+`ModuleNotFoundError`. README.md and the user guide write plain `cedit`
 because they address someone who installed the published package; here that
 same entry point is `venv/bin/cedit` or `venv/bin/python3 -m cedit`. Tests
 do not need the editable install — the root `conftest.py` covers them.
@@ -87,7 +87,7 @@ before touching either.
 | `cedit/mdcore/` | **frozen**: `utils` (the pinned parser), `tree_diff` (hashing, segmentation, similarity) — every recorded hash is a function of these |
 | `cedit/__main__.py` | `python3 -m cedit` entry — delegates to `cli.main` |
 | `tests/` | `test_merge3.py` (the merge matrix), `test_cli.py` (end-to-end lifecycle), `test_mdcli.py` (the `md` group), `test_mathguard.py` (math-guard precision, both columns re-measured each run), `test_rowguard.py` (table-row preservation, detection precision, and the hash-neutrality claim), `test_packaging.py` (version resolution, pin drift, README link absoluteness, docs kept out of the distribution), `test_parser_contract.py` (the drift check — invariant 2, enforced) |
-| `docs/` | the four **published** documents — `USERGUIDE.md`, `SPEC.md`, `ARCHITECTURE.md`, `cedit-canonicalization-reference.md`. Plain Markdown, rendered by the site, not rewritten for it |
+| `docs/` | the **published** documents — the user guide (`userguide/`, split into chapters), `SPEC.md`, `ARCHITECTURE.md`, `cedit-canonicalization-reference.md`. Plain Markdown, rendered by the site, not rewritten for it |
 | `website/` | the Docusaurus site that publishes `docs/` — its own `package.json`, config, sidebar, landing page and `.gitignore`; never part of the sdist or the wheel. See *The docs site* below |
 
 A `sync` flows in one direction: **parse** B (base), L (local working copy)
@@ -106,26 +106,48 @@ replace it: every document under `docs/` is still a plain `.md` file that
 reads correctly on GitHub and in an editor, and nothing here is written in
 another format.
 
-**What is published, and what deliberately is not.** The four documents in
-`docs/` are. `AGENTS.md`, `CLAUDE.md` and `.claude/rules/` are not, and they
-stay at the repository root: they are read by AI tooling from fixed paths —
+**What is published, and what deliberately is not.** Everything in `docs/`
+is. `AGENTS.md`, `CLAUDE.md` and `.claude/rules/` are not, and they stay at
+the repository root: they are read by AI tooling from fixed paths —
 `CLAUDE.md` `@`-imports `AGENTS.md`, the rules files are opened by relative
 path — and publishing them serves no reader. `README.md` also stays, because
 it is the PyPI long description (`readme = "README.md"`).
 
-**Three link rules follow from that split**, and a build failure or a silent
-404 is what breaks when one is ignored:
+**The user guide is a directory, not a file.** `docs/userguide/` holds an
+index page and 19 chapters in five groups, each group a subdirectory with a
+`_category_.json`. It was one 2,200-line file until CED-32; the split is what
+makes the left sidebar a table of contents instead of a single entry. Order
+comes from `sidebar_position` in each page's front matter and `position` in
+each `_category_.json` — `website/sidebars.js` autogenerates from those, so
+a new chapter is added by creating one file, in one place.
 
-- *Between the four published docs* — relative (`](SPEC.md)`). Docusaurus
-  rewrites those to site routes, and `onBrokenMarkdownLinks: 'throw'` fails
-  the build if one stops resolving.
+**Slugs are flat, and that is deliberate.** A chapter at
+`docs/userguide/help/limits.md` is served at `/docs/userguide/limits`, not
+`/docs/userguide/help/limits`, because every page sets an explicit `slug:`.
+The grouping is an editorial decision about the sidebar and may be
+reorganised; the URL is printed into a user's terminal by `mathguard`,
+`rowguard` and `linkguard` and must survive that. Move a chapter between
+groups freely — keep its slug.
+
+**Four link rules**, and a build failure or a silent 404 is what breaks when
+one is ignored:
+
+- *Between published docs* — relative (`](../SPEC.md)`). Docusaurus rewrites
+  those to site routes, and `markdown.hooks.onBrokenMarkdownLinks: 'throw'`
+  fails the build if one stops resolving. Mind the depth: a guide chapter is
+  two levels below `docs/`.
+- *Between guide chapters* — relative too (`](../help/limits.md)`), never the
+  published URL. The relative form is what Docusaurus can check.
 - *From a published doc to an unpublished one* — absolute
   `https://github.com/sdlctools/cedit/blob/main/…`. There is no site route to
   point at.
-- *In `README.md`* — absolute, and pointing at the **site** for the four
-  published docs. `tests/test_packaging.py::test_readme_links_are_absolute`
+- *In `README.md`* — absolute, and pointing at the **site** for everything
+  under `docs/`. `tests/test_packaging.py::test_readme_links_are_absolute`
   enforces the first half; nothing can enforce the second, so a `blob/main/`
   URL to a moved file 404s quietly.
+
+**Do not cite a doc by line number.** ARCHITECTURE.md used to, and every one
+of those citations broke the moment the guide moved. Name the page.
 
 Same rule for the paths cedit *prints*. A docstring or comment naming a
 document uses the repo-relative path (`docs/SPEC.md`); anything that reaches
