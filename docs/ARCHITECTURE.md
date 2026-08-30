@@ -49,10 +49,10 @@ cli.cmd_sync
 ├── blocks.canonicalise(upstream file)      U — mdformat round-trip, then compared to B
 │   ├── rowguard.protect / restore           a body row's over-the-header text lifted out and back
 │   └── mathguard.protect / restore          `$…$` math swapped for a sentinel and back
-├── mathguard.warn_fragile_math(U src, L)   stderr only, and only for spans `protect`
-│                                           could not locate — silent on every document
-│                                           measured
-├── rowguard.warn_row_overflow(U src, L)    the same, for rows `protect` could not lift
+├── guards.warn_all(U src, L)               the three source guards in one call: fragile
+│                                           math / row overflow `protect` could not cover,
+│                                           and unused link-ref definitions — stderr only,
+│                                           silent on every document measured
 └── merge3.merge(B, L, U)
     ├── blocks.parse_doc  ×3                → ParsedDoc(canonical, tokens, root, blocks, math, rows)
     │   ├── rowguard.protect                 runs first: it shortens row lines, and
@@ -100,10 +100,10 @@ Two properties fall out of this shape and are worth holding onto:
 
 ## `cedit/cli.py` — subcommands and exit-code policy
 
-Imports its whole working set at the top (`cli.py:20-25`): `blocks`
-(`StructureMismatch`, `canonicalise`, `parse_doc`, `splice_block`,
-`render_verified`), `mathguard` (`warn_fragile_math`), `mdcore.tree_diff`,
-`merge3` (`ORPHAN`, `Conflict`, `StructuralDrift`, `local_edits`, `merge`),
+Imports its whole working set at the top: `blocks` (`StructureMismatch`,
+`canonicalise`, `parse_doc`, `splice_block`, `render_verified`), `guards`
+(`warn_all`), `mdcore.tree_diff`, `merge3` (`ORPHAN`, `Conflict`,
+`StructuralDrift`, `local_edits`, `merge`), `rowguard` (`RowGuardError`),
 `state` (`State`, `StateError`, `norm_doc`), `store` (`atomic_write_text`,
 `read_text`).
 
@@ -287,7 +287,7 @@ on it, and per
 
 | Verb | Emits |
 | --- | --- |
-| `canonicalize [file\|-]` | the mdformat round-trip — the exact bytes `.cedit/base/<doc>` would hold, `$…$` math and a table row's over-the-header text included and unmoved. `-i` rewrites via `store.atomic_write_text`; `--check` writes nothing and exits 1 when the input is not already canonical (mutually exclusive with `-i`). All three modes call `mathguard.warn_fragile_math` and `rowguard.warn_row_overflow` on the input first — stderr only, so stdout stays the data channel, and silent unless a span or a row could not be protected |
+| `canonicalize [file\|-]` | the mdformat round-trip — the exact bytes `.cedit/base/<doc>` would hold, `$…$` math and a table row's over-the-header text included and unmoved. `-i` rewrites via `store.atomic_write_text`; `--check` writes nothing and exits 1 when the input is not already canonical (mutually exclusive with `-i`). All three modes call `guards.warn_all` on the input first — stderr only, so stdout stays the data channel, and silent unless a guard has something a round-trip would lose |
 | `ast [file\|-]` | indented tree dump; each line is `type [tag] [info=] [[kind]] [#hash] ["preview"]`. `--hashes` adds the Merkle hash, `--raw` skips canonicalisation |
 | `json [file\|-]` | `--tokens` (default) the flat `Token.as_dict()` stream; `--tree` a nested dict carrying `hash` and `kind` |
 | `from-json [file\|-]` | Markdown rendered from a `--tokens` stream |
@@ -614,10 +614,10 @@ render path itself, so the claim stays measured rather than asserted.
 
 ## `cedit/mathguard.py` — the `$...$` math guard
 
-A detector, a protector and a reporter. `blocks` is the only importer, and
-nothing here participates in alignment or the merge — but since CED-27 it
-*does* sit on the hashing path, because the tree is built over the text it
-rewrites.
+A detector, a protector and a reporter. `blocks` imports it for the
+protection and `linkguard` for `mask_code_spans`; nothing here participates
+in alignment or the merge — but since CED-27 it *does* sit on the hashing
+path, because the tree is built over the text it rewrites.
 
 The defect: GitHub renders `$...$` and `$$...$$` as math, the pinned parser
 has no such syntax, and so a backslash inside such a span is ordinary text
@@ -682,12 +682,10 @@ Design points, and the three gaps the CED-27 prototype had to close:
 
 Call sites: `blocks.canonicalise`, `blocks.parse_doc`, `blocks.splice_block`
 and `blocks.render_verified` for the protection — between them every path
-that writes. `warn_fragile_math` keeps CED-26's four wirings: `cmd_snapshot`
-on both sources, `cmd_sync` on both sources after the up-to-date
-short-circuit, `cmd_resolve --take upstream` on the working copy, and
-`mdcli.cmd_md_canonicalize` on its input. `cmd_diff` and `cmd_status`
-deliberately stay silent — they write nothing, and `md canonicalize --check`
-is the standalone probe.
+that writes. `warn_fragile_math` is no longer wired on its own: it runs
+through `guards.warn_all`, at the sites listed under `cedit/guards.py` below.
+`cmd_diff` and `cmd_status` deliberately stay silent — they write nothing,
+and `md canonicalize --check` is the standalone probe.
 
 Making `$...$` actually parse as math is still rejected, not deferred, and
 preserving it is not the same thing — nothing keys on the *contents* of a
@@ -702,9 +700,10 @@ holding math.
 ## `cedit/rowguard.py` — the table-row guard
 
 The same shape as `mathguard` — a detector, a protector and a reporter, with
-`blocks` as the only importer — answering the same class of defect: content
-the parser discards before cedit's tree exists, which no later stage can see.
-The mechanism differs, and that difference is the design.
+`blocks` as the only importer of its protection — answering the same class of
+defect: content the parser discards before cedit's tree exists, which no
+later stage can see. The mechanism differs, and that difference is the
+design.
 
 **What is lost.** A GFM table's header row fixes the column count for the
 whole table, and markdown-it's body-row loop is `for i in range(columnCount)`
@@ -767,10 +766,53 @@ Design points:
 Call sites: `blocks.canonicalise`, `blocks.parse_doc` and
 `blocks.render_verified` for the protection — `blocks.splice_block` is the
 one `mathguard` wiring it does **not** share, and deliberately. Its
-`warn_row_overflow` takes the same five wirings as `warn_fragile_math`:
-`cmd_snapshot` on both sources, `cmd_sync` on both sources, `cmd_resolve
---take upstream` on the working copy, and `mdcli.cmd_md_canonicalize` on its
-input.
+`warn_row_overflow` runs wherever `warn_fragile_math` does, through the
+shared `guards.warn_all` (below).
+
+## `cedit/linkguard.py` — the link-reference guard
+
+The third source guard, and the odd one out: a detector and a reporter, **no
+protector**. Markdown lets a link be defined away from its use
+(`[ref]: https://example.com` … `[ref]`), and mdformat inlines the
+definition wherever it is used and **discards it wherever it is not**. A used
+definition survives as a direct link; an unused one is content loss with no
+downstream trace — the same shape of defect `mathguard` and `rowguard`
+answer. It cannot be answered the same way: once its last use is gone the
+definition genuinely is too, and there is nothing byte-exact to lift out and
+put back. So this guard only warns.
+
+| Symbol | What it does |
+| --- | --- |
+| `LinkRef` (`linkguard.py:33`) | frozen dataclass: `line` (1-based), `label`, `url`, `title` (or `None`) |
+| `_NON_PROSE_TYPES` / `_non_prose_line_ranges(md)` / `_in_ranges(...)` | the 1-based line spans of `fence` / `code_block` / `html_block` / `front_matter` regions, from the AST. A definition inside one is preserved byte for byte (code) or passes through (HTML, front matter), so it is excluded from detection |
+| `_REF_DEF` | the link-reference-definition regex: `[label]: url` with an optional `<>`-wrapped url and an optional `"…"`/`'…'` title |
+| `_find_link_ref_defs(md)` | every definition outside the non-prose regions, `label → LinkRef` |
+| `_find_used_refs(md, definitions)` | the subset actually referenced in inline-token content, with `mathguard.mask_code_spans` applied first so a `[ref]` in a backtick span is text, not a use. Full (`[text][label]`) and shortcut (`[label]`) references, images counted as uses because they inline the url too |
+| `find_link_refs(md)` | `(definitions, used_labels)` — the detection primitive, like `find_fragile_math` / `find_row_overflow` |
+| `warn_link_refs(md, label, *, stream=None)` | reports `definitions − used` via `guardreport.emit`, returns the reported `LinkRef`s. **Never touches the exit code** |
+
+No protection call sites — `blocks` does not import it. `warn_link_refs`
+runs only through `guards.warn_all` (below).
+
+## `cedit/guards.py` and `cedit/guardreport.py` — the guard wiring
+
+Two small modules that keep the three guards above from drifting apart.
+
+- **`guards.py`** — the aggregator. `SOURCE_GUARDS` is the tuple
+  `(warn_fragile_math, warn_row_overflow, warn_link_refs)` and
+  `warn_all(src, label)` iterates it. Every path that hands a source to the
+  parser calls `warn_all` once: `cmd_snapshot` on both sources, `cmd_sync` on
+  both sources after the up-to-date short-circuit, `cmd_resolve --take
+  upstream` on the working copy, and `mdcli.cmd_md_canonicalize` on its
+  input. `cmd_diff` and `cmd_status` stay silent — they write nothing. A
+  fourth guard is added to `SOURCE_GUARDS` and nowhere else.
+- **`guardreport.py`** — the shared stderr block. `emit(label, findings, *,
+  summary, detail, footer, stream=None)` prints `<label>: warning:
+  <summary>`, one indented `line <n>: <detail(finding)>` per finding, the
+  guard's own prose `footer`, then the shared `USER_GUIDE_LIMITS` URL — and
+  nothing when `findings` is empty. Each `warn_*` supplies only its own
+  wording. It imports nothing from the guard family, so `guards.py` can
+  import the three guards without a cycle.
 
 ## `cedit/state.py` — the `.cedit/` directory
 
@@ -882,6 +924,15 @@ stack exactly (invariant 2):
   therefore part of the parser identity — which is why adding an mdformat
   plugin to the environment is a hash-moving change, exactly like bumping a
   pin.
+
+`make_parser` is `@lru_cache(maxsize=1)` (CED-34): the configuration is a
+pure function of the installed stack, so one `MarkdownIt` is built per
+process and shared by every `markdown_to_ast` / `parse_inline` /
+`ast_to_markdown` call — measured hash-neutral against the drift check and
+the whole-repo canonical corpus. The returned parser is treated as
+read-only; `ast_to_markdown` copies `md.options` before the render for that
+reason, and `make_parser.cache_clear()` forces a rebuild if a test needs
+one.
 
 | Symbol | Purpose |
 | --- | --- |

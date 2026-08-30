@@ -270,9 +270,12 @@ tell a hash-moving change from a hash-neutral one, the drift check that
 decides it, and what consumers do when hashes moved. The invariants:
 
 - **Parser**: `mdcore/utils.make_parser`, pinned stack, canonical
-  round-trip. cedit adds no parser options. Every hash in `.cedit/` state
-  is taken over it — moving a pin without re-validating moves every hash
-  and turns the next sync into a wall of false conflicts.
+  round-trip. Its options are fixed there and changed only under
+  hash-stability.md — the few it sets (`linkify`, `tasklists` and `alerts`
+  off; `mdformat.keep_orphans` on) are each argued hash-neutral or
+  content-preserving inline, not a change to what round-trips. Every hash in
+  `.cedit/` state is taken over it — moving a pin without re-validating moves
+  every hash and turns the next sync into a wall of false conflicts.
 - **Hashing/segmentation**: `mdcore.tree_diff`'s `hash_tree`, `is_unit` and
   `OPAQUE`, `_unit_source`, `ratio` and the thresholds — never re-derived,
   only consumed (`cedit/blocks.py`, `cedit/align.py`).
@@ -343,3 +346,12 @@ decides it, and what consumers do when hashes moved. The invariants:
   survive even though nothing keys on them. It is carried, not understood —
   and because it belongs to no block, it is not merged either: the merged
   document keeps the row upstream sent.
+- **Keeping an unused link reference definition.** A `[ref]: https://…` line
+  that nothing references is dropped by mdformat on the round-trip (a *used*
+  one is fine — it is inlined into a direct link). Unlike the math and
+  table-row cases there is nothing byte-exact to hold out and restore: once
+  its last use is gone the definition genuinely is too. cedit cannot
+  preserve it, so it **warns on stderr** when a source carries one
+  (`cedit/linkguard.py`; [Limits, stated plainly](userguide/help/limits.md)),
+  exit code untouched, and leaves the fix — use the reference, or write a
+  direct link — to the author.
