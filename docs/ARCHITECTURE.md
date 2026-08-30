@@ -638,7 +638,7 @@ source ──protect──► sentinel ──parse──► tokens ──render�
 | --- | --- |
 | `MathSpan` (`mathguard.py:88`) | frozen dataclass: `line` (1-based), `delim` (`"$"` / `"$$"`), `text` (the run as written), `start`/`end` (absolute source offsets, `None` when the span could not be located) |
 | `Protected` (`mathguard.py:296`) | frozen dataclass: `text` (the source with sentinels in place), `spans` (sentinel → original), `unprotected` (the `MathSpan`s left alone). `.restore()` is the inverse |
-| `_mask_code_spans(src)` (`mathguard.py:106`) | blanks inline code spans to `\x00`, **preserving length** so every later offset stays valid. CommonMark's rule: a run of N backticks is closed by the next run of exactly N; an unmatched run is literal text; `\` escapes the next character |
+| `mask_code_spans(src)` (`mathguard.py:105`) | blanks inline code spans to `\x00`, **preserving length** so every later offset stays valid. CommonMark's rule: a run of N backticks is closed by the next run of exactly N; an unmatched run is literal text; `\` escapes the next character. Public because `linkguard._find_used_refs` reuses it — a `[ref]` in a backtick span is text, not a use |
 | `_matching_backticks(src, start, run)` (`mathguard.py:135`) | end offset of the next backtick run of exactly `run`, or `None` |
 | `_inline_close(masked, open_at)` (`mathguard.py:151`) | GitHub's inline delimiter rules — no whitespace after the opener, none before the closer, no newline inside. This is what keeps `$100 and $200` from being a span at all |
 | `_spans(masked)` (`mathguard.py:175`) | yields `(delim, start, end)`; `$$` is tried first and may cross lines, `$` may not |
@@ -649,7 +649,7 @@ source ──protect──► sentinel ──parse──► tokens ──render�
 | `_sentinel(text, doc, taken)` (`mathguard.py:310`) | `ceditmath` + 16 hex of `sha256(span)`, counted up until it collides with nothing in `doc` and with no other span |
 | `protect(md)` (`mathguard.py:328`) | → `Protected`. Rewrites the source at the offsets, never by matching the span text |
 | `restore(text, spans)` (`mathguard.py:352`) | puts the originals back, **longest sentinel first** |
-| `warn_fragile_math(md, label, *, stream=None)` (`mathguard.py:368`) | reports only `protect(md).unprotected` to stderr and returns it. **Never touches the exit code** |
+| `warn_fragile_math(md, label, *, stream=None)` (`mathguard.py:386`) | reports only `protect(md).unprotected` to stderr and returns it. **Never touches the exit code** |
 
 Design points, and the three gaps the CED-27 prototype had to close:
 
@@ -737,7 +737,7 @@ to write if block structure moved at all.
 | `_fingerprint(tokens)` (`rowguard.py:207`) | everything about a token stream a hash or a render can read: type, tag, content, info, markup, nesting, level, block, hidden, map, attrs, children |
 | `protect(md)` (`rowguard.py:218`) | → `Protected`. **Accepts the lift only if the parser cannot tell**: both sides are parsed and fingerprinted, and a mismatch abandons the whole lift rather than trusting it |
 | `restore(text, overflows)` (`rowguard.py:246`) | re-parses `text` to locate its body rows and appends each surplus onto its own |
-| `warn_row_overflow(md, label, *, stream=None)` (`rowguard.py:267`) | reports only `protect(md).unprotected` to stderr and returns it. **Never touches the exit code** |
+| `warn_row_overflow(md, label, *, stream=None)` (`rowguard.py:268`) | reports only `protect(md).unprotected` to stderr and returns it. **Never touches the exit code** |
 
 Design points:
 
@@ -1052,7 +1052,7 @@ same Markdown hashes to, everywhere, retroactively.
 | Change `SIM_THRESHOLD`, `FUZZY_THRESHOLD`, `align`'s passes | no | pairing only — recomputed on every run |
 | Change the merge matrix in `merge3.merge` | no | decides over hashes, does not produce them |
 | Change `splice_block`, `render_verified`, `cli` output, `store`, `state` | no | downstream of hashing |
-| Change `mathguard`'s **detection** (`find_fragile_math`, `_spans`, `_inline_close`, `_mask_code_spans`) | **yes, for documents holding `$…$` math** | detection decides what gets protected, so widening or narrowing it changes the canonical form of exactly those documents — and nothing else. This is how CED-27 itself moved hashes |
+| Change `mathguard`'s **detection** (`find_fragile_math`, `_spans`, `_inline_close`, `mask_code_spans`) | **yes, for documents holding `$…$` math** | detection decides what gets protected, so widening or narrowing it changes the canonical form of exactly those documents — and nothing else. This is how CED-27 itself moved hashes |
 | Change `mathguard`'s **sentinel** (`_PREFIX`, `_DIGEST`, `_sentinel`) | **yes, for documents holding `$…$` math** | the tree is built over the sentinel, so its spelling is a hash input. The canonical *bytes* do not move — `restore` puts the same math back — which makes this the cheaper half of the damage (see hash-stability.md) |
 | Change `mathguard.warn_fragile_math` or the message text | no | stderr only, and downstream of everything |
 | Change `rowguard`'s **detection** (`find_row_overflow`, `_body_rows`, `_cut`, `_unescaped_pipes`) | **no — but it moves canonical bytes for documents holding an over-the-header table row** | the lifted text is outside every block and is stripped before hashing, so `protect` can and does assert the token stream is unchanged. Widening or narrowing detection therefore changes only what `.cedit/base/` *stores* for those documents, never what anything hashes to. Measure which documents, as CED-30 did |

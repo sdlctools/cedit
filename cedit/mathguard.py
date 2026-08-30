@@ -60,9 +60,9 @@ docs/userguide/help/limits.md is the user-facing version of this paragraph.
 from __future__ import annotations
 
 import hashlib
-import sys
 from dataclasses import dataclass
 
+from . import guardreport
 from .mdcore import tree_diff
 from .mdcore.utils import markdown_to_ast
 
@@ -102,7 +102,7 @@ class MathSpan:
 # --------------------------------------------------------------------------
 
 
-def _mask_code_spans(src: str) -> str:
+def mask_code_spans(src: str) -> str:
     """Blank out inline code spans, preserving length and every other offset.
 
     CommonMark's rule: a run of N backticks opens a code span that the next
@@ -276,7 +276,7 @@ def find_fragile_math(md: str) -> list[MathSpan]:
         # `cursor` past the cells of a table row that precede the flagged one.
         offsets = _content_line_offsets(src, first_line, src_lines,
                                         line_offset, cursor)
-        masked = _mask_code_spans(src)
+        masked = mask_code_spans(src)
         for delim, start, end in _spans(masked):
             body = src[start + len(delim):end - len(delim)]
             if "\\" not in body:
@@ -392,22 +392,18 @@ def warn_fragile_math(md: str, label: str, *, stream=None) -> list[MathSpan]:
     the tests can assert on the detection rather than on the wording.
     """
     spans = list(protect(md).unprotected)
-    if not spans:
-        return spans
-    out = sys.stderr if stream is None else stream
-    print(f"{label}: warning: {len(spans)} dollar-delimited math span(s) "
-          f"could not be located in the source", file=out)
-    for span in spans:
-        print(f"    line {span.line}: {tree_diff._clip(span.text)}", file=out)
-    print("    cedit preserves $...$ byte for byte by rewriting the source "
-          "around it, and\n"
-          "    cannot for these — canonicalisation will escape the backslash "
-          "($\\x -> $\\\\x),\n"
-          "    which GitHub reads inside math as a line break, so the rendered "
-          "maths changes.\n"
-          "    Use a ```math fence for display math, and the Unicode character "
-          "or a code span\n"
-          "    inline — the user guide, *Limits, stated plainly*:\n"
-          "    https://sdlctools.github.io/cedit/docs/userguide/limits",
-          file=out)
-    return spans
+    return list(guardreport.emit(
+        label, spans, stream=stream,
+        summary=f"{len(spans)} dollar-delimited math span(s) could not be "
+                f"located in the source",
+        detail=lambda span: tree_diff._clip(span.text),
+        footer="    cedit preserves $...$ byte for byte by rewriting the "
+               "source around it, and\n"
+               "    cannot for these — canonicalisation will escape the "
+               "backslash ($\\x -> $\\\\x),\n"
+               "    which GitHub reads inside math as a line break, so the "
+               "rendered maths changes.\n"
+               "    Use a ```math fence for display math, and the Unicode "
+               "character or a code span\n"
+               "    inline — the user guide, *Limits, stated plainly*:",
+    ))

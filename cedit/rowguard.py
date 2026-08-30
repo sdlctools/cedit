@@ -57,9 +57,9 @@ paragraph.
 from __future__ import annotations
 
 import re
-import sys
 from dataclasses import dataclass
 
+from . import guardreport
 from .mdcore import tree_diff
 from .mdcore.utils import markdown_to_ast
 
@@ -274,23 +274,18 @@ def warn_row_overflow(md: str, label: str, *, stream=None) -> list[RowOverflow]:
     on the wording.
     """
     overflows = list(protect(md).unprotected)
-    if not overflows:
-        return overflows
-    out = sys.stderr if stream is None else stream
-    print(f"{label}: warning: {len(overflows)} table row(s) carry text past "
-          f"the header's last column that could not be preserved", file=out)
-    for overflow in overflows:
-        print(f"    line {overflow.line}: {tree_diff._clip(overflow.text)}",
-              file=out)
-    print("    A GFM table's header row fixes the column count, and cedit's "
-          "parser discards\n"
-          "    whatever a body row carries past it — an annotation after the "
-          "closing pipe, or an\n"
-          "    extra cell. cedit normally lifts that text out and puts it "
-          "back verbatim, and\n"
-          "    cannot for these. Give the table another column, or move the "
-          "note into a cell\n"
-          "    — the user guide, *Limits, stated plainly*:\n"
-          "    https://sdlctools.github.io/cedit/docs/userguide/limits",
-          file=out)
-    return overflows
+    return list(guardreport.emit(
+        label, overflows, stream=stream,
+        summary=f"{len(overflows)} table row(s) carry text past the header's "
+                f"last column that could not be preserved",
+        detail=lambda overflow: tree_diff._clip(overflow.text),
+        footer="    A GFM table's header row fixes the column count, and "
+               "cedit's parser discards\n"
+               "    whatever a body row carries past it — an annotation after "
+               "the closing pipe, or an\n"
+               "    extra cell. cedit normally lifts that text out and puts "
+               "it back verbatim, and\n"
+               "    cannot for these. Give the table another column, or move "
+               "the note into a cell\n"
+               "    — the user guide, *Limits, stated plainly*:",
+    ))
