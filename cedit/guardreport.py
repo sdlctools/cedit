@@ -1,15 +1,10 @@
 """The stderr block every source guard prints, in one place.
 
-`mathguard`, `rowguard` and `linkguard` each warn about something the
-mdformat round-trip would lose, and the warning has always had the same
-shape: a `<label>: warning: <summary>` line, one indented `line <n>: …` line
-per finding, then a short prose footer whose last line is the user guide's
-*Limits* page. Only the wording is the guard's own; the layout and the URL
-live here.
-
-This is a leaf module on purpose — it imports nothing from the guard family,
-so `guards.py` (the aggregator) can import the guards without an import
-cycle.
+Each guard's warning has the same shape — a `<label>: warning: <summary>`
+line, one indented `line <n>: …` per finding, a short prose footer whose
+last line is the user guide's *Limits* page. Only the wording is the guard's
+own. A leaf module on purpose: it imports nothing from the guard family, so
+`guards.py` can import the guards without a cycle.
 """
 
 from __future__ import annotations
@@ -26,15 +21,8 @@ def emit(label: str, findings: Sequence[_F], *, summary: str,
          detail: Callable[[_F], str], footer: str, stream=None) -> Sequence[_F]:
     """Print one guard's stderr block, or nothing when `findings` is empty.
 
-        <label>: warning: <summary>
-            line <n>: <detail(finding)>
-            ...
-        <footer>
-        <user-guide URL>
-
     Every finding must carry a 1-based `.line`. Returns `findings` unchanged
-    so a `warn_*` can `return emit(...)`. Never touches the exit code
-    (AGENTS.md invariant 4).
+    so a `warn_*` can `return emit(...)`. Never touches the exit code.
     """
     if not findings:
         return findings

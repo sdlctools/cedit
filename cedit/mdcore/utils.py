@@ -19,12 +19,10 @@ import mdformat.plugins
 def make_parser() -> MarkdownIt:
     """A parser configured exactly as the whole pipeline expects it.
 
-    Cached for the process: the configuration is a pure function of the
-    installed stack (nothing here reads anything else), and rebuilding it —
-    a fresh `MarkdownIt` plus the whole mdformat plugin loop — is not free
-    when one `sync` parses dozens of times and each guard re-parses on top.
-    The returned parser MUST be treated as read-only; `ast_to_markdown`
-    already copies `md.options` before the render for exactly this reason.
+    Cached for the process — the configuration is a pure function of the
+    installed stack, and rebuilding it on every parse is wasted work. The
+    result MUST be treated as read-only; `ast_to_markdown` copies
+    `md.options` before the render for that reason, and
     `make_parser.cache_clear()` forces a rebuild if a test needs one.
     """
     md = MarkdownIt("gfm-like2")
