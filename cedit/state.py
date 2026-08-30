@@ -91,10 +91,7 @@ class State:
         return {key: Conflict.from_dict(key, data) for key, data in raw.items()}
 
     def save_manifest(self) -> None:
-        out = dict(self.manifest)
-        out["docs"] = {k: self.manifest["docs"][k]
-                       for k in sorted(self.manifest["docs"])}
-        atomic_write_text(self.manifest_path, dumps(out))
+        self._save_sorted(self.manifest_path, self.manifest)
 
     # -- overlay ----------------------------------------------------------
 
@@ -105,10 +102,21 @@ class State:
         }
 
     def save_overlay(self) -> None:
-        out = dict(self.overlay)
-        out["docs"] = {k: self.overlay["docs"][k]
-                       for k in sorted(self.overlay["docs"])}
-        atomic_write_text(self.overlay_path, dumps(out))
+        self._save_sorted(self.overlay_path, self.overlay)
+
+    # -- shared writer --------------------------------------------------------
+
+    @staticmethod
+    def _save_sorted(path: str, obj: dict) -> None:
+        """Write `obj` to `path` with its `docs` map re-sorted.
+
+        The manifest and the overlay are the same file shape — a `schema`
+        string and a `docs` map — and are persisted the same way: sort the
+        doc keys so a one-doc change stays a one-line diff, then atomic-write.
+        """
+        out = dict(obj)
+        out["docs"] = {k: obj["docs"][k] for k in sorted(obj["docs"])}
+        atomic_write_text(path, dumps(out))
 
     # -- base snapshots ---------------------------------------------------
 
