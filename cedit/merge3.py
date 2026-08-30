@@ -25,7 +25,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .align import DELETED, EDITED, SAME, Fate, align
-from .blocks import Block, ParsedDoc, parse_doc, render_verified
+from .blocks import Block, ParsedDoc, parse_doc, render_verified, splice_block
 
 CONFLICT = "conflict"
 ORPHAN = "orphan"
@@ -250,7 +250,6 @@ def merge(base_md: str, local_md: str, upstream_md: str, *,
 
 
 def _splice(doc: ParsedDoc, edit: LocalEdit, target: Block) -> bool:
-    from .blocks import splice_block
     return splice_block(doc, target, edit.local_text, edit.local_info)
 
 
