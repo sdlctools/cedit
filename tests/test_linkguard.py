@@ -87,6 +87,14 @@ def test_reference_in_code_block_is_not_marked_as_used():
     assert "ref" not in used
 
 
+def test_reference_inside_an_inline_code_span_is_not_marked_as_used():
+    """`[ref]` in a backtick span in prose is text, not a use — so it warns."""
+    md = "[ref]: https://example.com\n\nType `[ref]` to see it.\n"
+    defs, used = find_link_refs(md)
+    assert "ref" in defs
+    assert "ref" not in used
+
+
 def test_line_numbers_are_tracked():
     """Line numbers in LinkRef are correct."""
     md = "Line 1\n[ref]: https://example.com\nLine 3"

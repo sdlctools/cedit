@@ -8,13 +8,23 @@ one would change token streams under recorded hashes — which is also why
 `tests/parser_contract.py` records what this function produces.
 """
 
+from functools import lru_cache
+
 from markdown_it import MarkdownIt
 from mdformat.renderer import MDRenderer
 import mdformat.plugins
 
 
+@lru_cache(maxsize=1)
 def make_parser() -> MarkdownIt:
-    """A parser configured exactly as the whole pipeline expects it."""
+    """A parser configured exactly as the whole pipeline expects it.
+
+    Cached for the process — the configuration is a pure function of the
+    installed stack, and rebuilding it on every parse is wasted work. The
+    result MUST be treated as read-only; `ast_to_markdown` copies
+    `md.options` before the render for that reason, and
+    `make_parser.cache_clear()` forces a rebuild if a test needs one.
+    """
     md = MarkdownIt("gfm-like2")
     md.options["linkify"] = False
     # markdown-it-py >= 4.2's `gfm-like2` parses task lists *natively*: it sets

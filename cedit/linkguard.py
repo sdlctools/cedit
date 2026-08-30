@@ -1,101 +1,84 @@
-"""Preserve link reference definitions that canonicalisation would otherwise drop.
+"""Warn about link reference definitions that canonicalisation would drop.
 
-Markdown allows link references to be defined separately from their use:
+Markdown lets a link be defined away from its use:
 
     [ref]: https://example.com
 
     Link to [ref].
 
-The pinned parser (mdformat) inlines these definitions on render, converting
-them to direct links. This is semantically correct for used references, but
-destroys unused references entirely — content loss with no warning.
+The pinned parser (mdformat) inlines a definition wherever it is used and
+**discards it everywhere it is not** — an unused `[ref]: …` line is content
+loss with no trace downstream, the same shape of failure `mathguard` and
+`rowguard` answer.
 
-This module preserves them by:
-1. Detecting link reference definitions in the source
-2. Warning about unused definitions that would be lost
-3. Optionally preserving them in the output (future work)
-
-The immediate fix is detection + warning, wired exactly like the fragile-math
-alarm: stderr only, exit code untouched, so a clean document says nothing.
+Unlike those two this guard only reports: an unused definition is genuinely
+gone after the round-trip and there is nothing byte-exact to lift out and
+put back. So `warn_link_refs` scans the source for definitions, subtracts
+the ones actually referenced, and reports the rest on **stderr, leaving the
+exit code alone** (AGENTS.md invariant 4). A document whose definitions are
+all used says nothing. docs/userguide/help/limits.md is the user-facing
+version of this.
 """
 
 from __future__ import annotations
 
 import re
-import sys
 from dataclasses import dataclass
 
+from . import guardreport
+from .mathguard import mask_code_spans
 from .mdcore.utils import markdown_to_ast
-from .mdcore import tree_diff
 
 
 @dataclass(frozen=True)
 class LinkRef:
     """One link reference definition."""
+
     line: int
     label: str
     url: str
     title: str | None
 
 
-# Token types that contain non-prose content where definitions should NOT be detected
+# Token types whose text is not prose: a definition inside one is preserved
+# byte for byte by canonicalisation (code blocks) or passes straight through
+# (HTML, front matter), so it is not at risk and must not be flagged.
 _NON_PROSE_TYPES = frozenset({
-    "fence",         # fenced code blocks
-    "code_block",    # indented code blocks
-    "html_block",    # HTML blocks
-    "front_matter",  # YAML front matter
+    "fence", "code_block", "html_block", "front_matter",
 })
+
+# A link reference definition: `[label]: url` with an optional `"title"` or
+# `'title'`, url optionally wrapped in `<>`.
+_REF_DEF = re.compile(
+    r"^\s*\[([^\]]+)\]\s*:\s*(?:<([^>]+)>|(\S+))"
+    r"(?:\s+(?:\"([^\"]*)\"|'([^']*)'))?\s*$"
+)
 
 
 def _non_prose_line_ranges(md: str) -> list[tuple[int, int]]:
-    """Return line ranges (1-based, inclusive) of non-prose regions.
-
-    Definitions inside these regions are not lost during canonicalisation
-    (code blocks are preserved byte-for-byte, HTML blocks pass through),
-    so we exclude them from detection.
-    """
+    """1-based inclusive line ranges of the non-prose regions in `md`."""
     ranges = []
     for token in markdown_to_ast(md):
         if token.type in _NON_PROSE_TYPES and token.map:
-            # map is [start_line, end_line] 0-based, end is exclusive
-            # Convert to 1-based inclusive range
-            start = token.map[0] + 1
-            end = token.map[1]  # already 1-based after +1 to inclusive
+            start = token.map[0] + 1        # token.map is [start, end), 0-based
+            end = token.map[1]              # → 1-based inclusive
             if start <= end:
                 ranges.append((start, end))
     return ranges
 
 
-def _line_in_ranges(line: int, ranges: list[tuple[int, int]]) -> bool:
-    """Check if a line number falls within any of the ranges."""
-    for start, end in ranges:
-        if start <= line <= end:
-            return True
-    return False
+def _in_ranges(line: int, ranges: list[tuple[int, int]]) -> bool:
+    return any(start <= line <= end for start, end in ranges)
 
 
 def _find_link_ref_defs(md: str) -> dict[str, LinkRef]:
-    """Find all link reference definitions in the markdown source.
-
-    Scans the raw source but excludes definitions inside non-prose regions
-    (code blocks, HTML blocks, front matter) by consulting the AST.
-    """
+    """Every link reference definition in `md`, outside the non-prose regions."""
     non_prose = _non_prose_line_ranges(md)
-
-    # Pattern for link reference definitions: [label]: url "title" or 'title'
-    # Title is optional, and url can be in <>
-    # Allows both single and double quoted titles
-    ref_pattern = re.compile(
-        r'^\s*\[([^\]]+)\]\s*:\s*(?:<([^>]+)>|([^\s]+))'
-        r'(?:\s+(?:"([^"]*)"|\'([^\']*)\'))?\s*$'
-    )
-
-    definitions = {}
-    for i, line in enumerate(md.split('\n'), 1):
-        # Skip lines inside non-prose regions
-        if _line_in_ranges(i, non_prose):
+    definitions: dict[str, LinkRef] = {}
+    for i, line in enumerate(md.split("\n"), 1):
+        if _in_ranges(i, non_prose):
             continue
-        match = ref_pattern.match(line)
+        match = _REF_DEF.match(line)
         if match:
             label = match.group(1)
             url = match.group(2) or match.group(3)
@@ -105,47 +88,35 @@ def _find_link_ref_defs(md: str) -> dict[str, LinkRef]:
 
 
 def _find_used_refs(md: str, definitions: dict[str, LinkRef]) -> set[str]:
-    """Find all used reference labels in the markdown source.
+    """The subset of `definitions` actually referenced in `md`'s prose.
 
-    Scans only inline tokens (excludes code blocks, HTML blocks, front matter).
-    Returns the set of labels that are actually referenced.
+    Scans inline-token content only, with code spans masked out first — a
+    `[label]` inside a backtick span is text, not a reference, exactly as
+    `mathguard` masks them before its own scan.
     """
     if not definitions:
         return set()
 
-    used = set()
+    used: set[str] = set()
     for token in markdown_to_ast(md):
-        # Only inline tokens carry prose where references can be used
         if token.type != "inline" or not token.content:
             continue
+        src = mask_code_spans(token.content)
 
-        src = token.content
+        # Full reference links: `[text][label]`, but not `![text][label]`.
+        for m in re.finditer(r"(?<!!)\[([^\]]+)\]\s*\[([^\]]+)\]", src):
+            if m.group(2) in definitions:
+                used.add(m.group(2))
 
-        # Look for full reference links: [text][label]
-        # Skip if preceded by ! (image syntax)
-        for m in re.finditer(r'(?<!\!)\[([^\]]+)\]\s*\[([^\]]+)\]', src):
-            label = m.group(2)
-            if label in definitions:
-                used.add(label)
-
-        # Look for shortcut reference links: [label]
-        # Must not be preceded by ! (image) or followed by ( (inline link)
-        # Must not be a definition line (followed by :)
-        for m in re.finditer(r'(?<!\!)\[([^\]]+)\]', src):
+        # Shortcut reference links: a bare `[label]` that is neither an image,
+        # an inline link `[text](url)`, nor a definition `[label]:`.
+        for m in re.finditer(r"(?<!!)\[([^\]]+)\]", src):
             label = m.group(1)
-            if not label or label in ('', ' '):
+            if not label.strip():
                 continue
-            start, end = m.span()
-
-            # Skip if this is a definition: [label]:
-            if end < len(src) and src[end] == ':':
+            after = src[m.end():m.end() + 1]
+            if after in (":", "("):
                 continue
-
-            # Skip if followed by ( — inline link [text](url)
-            if end < len(src) and src[end] == '(':
-                continue
-
-            # If the label matches a definition, count it as used
             if label in definitions:
                 used.add(label)
 
@@ -153,57 +124,38 @@ def _find_used_refs(md: str, definitions: dict[str, LinkRef]) -> set[str]:
 
 
 def find_link_refs(md: str) -> tuple[dict[str, LinkRef], set[str]]:
-    """Find all link reference definitions and identify which are used.
+    """`(definitions, used_labels)` for `md`.
 
-    Returns (all_definitions, used_labels) where:
-    - all_definitions maps label -> LinkRef
-    - used_labels is the set of labels actually referenced in the text
-
-    Uses the parser's AST to exclude non-prose regions (code blocks, HTML
-    blocks, front matter) from definition scanning, so definitions inside
-    those regions are correctly ignored — they are NOT lost during
-    canonicalisation. Usage tracking also uses the AST's inline tokens,
-    so references inside code blocks are not counted as "used".
+    `definitions` maps label → `LinkRef`; `used_labels` is the subset
+    referenced in prose. Both consult the parser's AST so definitions and
+    references inside code blocks, HTML blocks and front matter are ignored —
+    canonicalisation does not touch those.
     """
     definitions = _find_link_ref_defs(md)
-    used = _find_used_refs(md, definitions)
-    return definitions, used
+    return definitions, _find_used_refs(md, definitions)
 
 
 def warn_link_refs(md: str, label: str, *, stream=None) -> list[LinkRef]:
-    """Warn about link reference definitions that would be lost.
+    """Report the unused link reference definitions in `md` on stderr.
 
-    Reports unused definitions on stderr, leaving the exit code alone.
-    Returns the list of unused definitions that were reported.
+    Returns the reported `LinkRef`s, so the tests can assert on the detection
+    rather than on the wording. **Never touches the exit code.**
     """
     definitions, used = find_link_refs(md)
+    unused = [ref for lbl, ref in definitions.items() if lbl not in used]
 
-    if not definitions:
-        return []
+    def detail(ref: LinkRef) -> str:
+        text = f"[{ref.label}]: {ref.url}"
+        return f'{text} "{ref.title}"' if ref.title else text
 
-    # Identify unused definitions
-    unused = [ref for label, ref in definitions.items() if label not in used]
-
-    if not unused:
-        return []
-
-    out = sys.stderr if stream is None else stream
-
-    print(f"{label}: warning: {len(unused)} link reference definition(s) "
-          f"would be lost during canonicalisation", file=out)
-
-    for ref in unused:
-        line = f"    line {ref.line}: [{ref.label}]: {ref.url}"
-        if ref.title:
-            line += f" \"{ref.title}\""
-        print(line, file=out)
-
-    print("    Link reference definitions (e.g., '[label]: https://...') are "
-          "inlined when used,", file=out)
-    print("    but unused definitions are silently dropped. Either use the "
-          "reference or convert it", file=out)
-    print("    to a direct link. See the user guide for details:", file=out)
-    print("    https://sdlctools.github.io/cedit/docs/userguide/limits",
-          file=out)
-
-    return unused
+    return list(guardreport.emit(
+        label, unused, stream=stream,
+        summary=f"{len(unused)} link reference definition(s) would be lost "
+                f"during canonicalisation",
+        detail=detail,
+        footer="    Link reference definitions (`[label]: https://…`) are "
+               "inlined where they are\n"
+               "    used and silently dropped where they are not. Use the "
+               "reference, or make it a\n"
+               "    direct link — the user guide, *Limits, stated plainly*:",
+    ))
